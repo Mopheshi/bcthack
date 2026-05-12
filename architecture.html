@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DSN x BCT Hackathon — System Architecture</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f8f8f6; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; margin: 0; }
+  h1 { font-size: 15px; font-weight: 500; color: #555; margin: 0 0 20px; letter-spacing: 0.02em; }
+  svg { max-width: 780px; width: 100%; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a18; }
+    h1 { color: #999; }
+  }
+</style>
+</head>
+<body>
+<h1>DSN × BCT LLM Agent Challenge — System Architecture</h1>
+<svg viewBox="0 0 680 610" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#999" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<!-- Docker container -->
+<rect x="25" y="38" width="630" height="548" rx="14" fill="none" stroke="#ccc" stroke-width="1" stroke-dasharray="6 4"/>
+<text x="340" y="28" text-anchor="middle" font-size="11" fill="#aaa">Docker · GCP deployed</text>
+
+<!-- Row 1: Yelp Dataset (purple tint) -->
+<rect x="140" y="52" width="400" height="56" rx="8" fill="#EEEDFE" stroke="#AFA9EC" stroke-width="0.5"/>
+<text x="340" y="74" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">Yelp dataset</text>
+<text x="340" y="92" text-anchor="middle" font-size="11" fill="#534AB7">reviews · users · businesses · tips · check-ins</text>
+
+<line x1="340" y1="108" x2="340" y2="141" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Row 2: Vector Store (teal) -->
+<rect x="140" y="141" width="400" height="56" rx="8" fill="#E1F5EE" stroke="#5DCAA5" stroke-width="0.5"/>
+<text x="340" y="163" text-anchor="middle" font-size="13" font-weight="500" fill="#085041">Vector store</text>
+<text x="340" y="181" text-anchor="middle" font-size="11" fill="#0F6E56">ChromaDB / FAISS · review embeddings indexed offline</text>
+
+<line x1="340" y1="197" x2="340" y2="230" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Row 3: Persona Engine (purple, highlighted border) -->
+<rect x="140" y="230" width="400" height="56" rx="8" fill="#EEEDFE" stroke="#7F77DD" stroke-width="1.5"/>
+<text x="340" y="252" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">Persona engine  ·  shared core</text>
+<text x="340" y="270" text-anchor="middle" font-size="11" fill="#534AB7">user history · rating bias · vocabulary · tone fingerprint</text>
+
+<!-- Fork to Task A and Task B -->
+<path d="M 340 286 L 160 286 L 160 320" fill="none" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+<path d="M 340 286 L 520 286 L 520 320" fill="none" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Row 4: Task A (blue) -->
+<rect x="40" y="320" width="240" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text x="160" y="342" text-anchor="middle" font-size="13" font-weight="500" fill="#0C447C">Review simulator</text>
+<text x="160" y="360" text-anchor="middle" font-size="11" fill="#185FA5">Task A · RAG + LLM generation</text>
+
+<!-- Row 4: Task B (blue) -->
+<rect x="400" y="320" width="240" height="56" rx="8" fill="#E6F1FB" stroke="#378ADD" stroke-width="0.5"/>
+<text x="520" y="342" text-anchor="middle" font-size="13" font-weight="500" fill="#0C447C">Recommendation agent</text>
+<text x="520" y="360" text-anchor="middle" font-size="11" fill="#185FA5">Task B · retrieval + reranking</text>
+
+<!-- Tasks converge into LLM -->
+<path d="M 160 376 L 160 394 L 240 394 L 240 410" fill="none" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+<path d="M 520 376 L 520 394 L 440 394 L 440 410" fill="none" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Row 5: LLM + Nigerian Layer (amber, highlighted) -->
+<rect x="140" y="410" width="400" height="56" rx="8" fill="#FAEEDA" stroke="#EF9F27" stroke-width="1.5"/>
+<text x="340" y="432" text-anchor="middle" font-size="13" font-weight="500" fill="#633806">LLM backbone + Nigerian style adapter</text>
+<text x="340" y="450" text-anchor="middle" font-size="11" fill="#854F0B">Claude / GPT-4o · Pidgin · cultural tone · context layer</text>
+
+<!-- LLM forks to endpoints -->
+<path d="M 240 466 L 240 484 L 160 484 L 160 500" fill="none" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+<path d="M 440 466 L 440 484 L 520 484 L 520 500" fill="none" stroke="#bbb" stroke-width="1" marker-end="url(#arr)"/>
+
+<!-- Row 6: FastAPI Endpoints (gray) -->
+<rect x="40" y="500" width="240" height="44" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="160" y="522" text-anchor="middle" font-size="13" font-weight="500" fill="#2C2C2A">POST /simulate-review</text>
+
+<rect x="400" y="500" width="240" height="44" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="520" y="522" text-anchor="middle" font-size="13" font-weight="500" fill="#2C2C2A">POST /recommend</text>
+
+<!-- Bottom note -->
+<text x="340" y="572" text-anchor="middle" font-size="10" fill="#bbb">Both containers share one persona engine · Nigerian layer applied to all outputs</text>
+</svg>
+</body>
+</html>

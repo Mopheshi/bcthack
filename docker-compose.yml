@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  task_a:
+    build:
+      context: .
+      dockerfile: task_a/Dockerfile
+    container_name: bct_task_a
+    ports:
+      - "${TASK_A_PORT:-8001}:8001"
+    env_file: .env
+    volumes:
+      - ./data:/app/data:ro          # read-only data mount
+      - ./shared:/app/shared:ro      # shared library
+    restart: unless-stopped
+
+  task_b:
+    build:
+      context: .
+      dockerfile: task_b/Dockerfile
+    container_name: bct_task_b
+    ports:
+      - "${TASK_B_PORT:-8002}:8002"
+    env_file: .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./shared:/app/shared:ro
+    restart: unless-stopped
