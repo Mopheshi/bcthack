@@ -1,0 +1,20 @@
+# Never bake data into the image — too large, mounted as volume instead
+data/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Virtual environment
+.venv/
+venv/
+
+# Dev files
+.env
+*.env
+.git/
+.gitignore
+scripts/
+*.md

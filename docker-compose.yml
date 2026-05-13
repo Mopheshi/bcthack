@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   task_a:
     build:
@@ -10,9 +8,14 @@ services:
       - "${TASK_A_PORT:-8001}:8001"
     env_file: .env
     volumes:
-      - ./data:/app/data:ro          # read-only data mount
-      - ./shared:/app/shared:ro      # shared library
+      - ./data:/app/data          # parquet + chroma index
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s             # persona builder takes ~30s to load parquet
 
   task_b:
     build:
@@ -23,6 +26,11 @@ services:
       - "${TASK_B_PORT:-8002}:8002"
     env_file: .env
     volumes:
-      - ./data:/app/data:ro
-      - ./shared:/app/shared:ro
+      - ./data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

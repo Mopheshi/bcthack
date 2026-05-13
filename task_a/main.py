@@ -1,37 +1,112 @@
 """
-task_a/main.py  —  Review Simulator (Task A)
-Day 2+ will fill in the simulator logic.
-This placeholder lets you confirm the container starts correctly.
+task_a/main.py  —  Review Simulator API
+POST /simulate-review
+POST /simulate-review/batch
+GET  /health
 """
 
-from fastapi import FastAPI
-from pydantic import BaseModel
+import logging
+from contextlib import asynccontextmanager
+from typing import Optional
 
-app = FastAPI(title="BCT Hackathon — Task A: Review Simulator", version="0.1.0")
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from task_a.simulator import ReviewSimulator
+
+logging.basicConfig(level="INFO", format="%(asctime)s  %(levelname)s  %(message)s")
+log = logging.getLogger(__name__)
+
+_simulator: Optional[ReviewSimulator] = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _simulator
+    log.info("Starting Task A — loading data ...")
+    _simulator = ReviewSimulator()
+    log.info("Task A ready")
+    yield
+
+
+app = FastAPI(
+    title="BCT Hackathon — Task A: Review Simulator",
+    description="LLM agent that simulates user reviews capturing tone, rating behaviour, and contextual nuance.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+class ProductDetails(BaseModel):
+    name        : str   = Field("", description="Business/product name")
+    categories  : str   = Field("", description="Comma-separated Yelp categories")
+    city        : str   = Field("", description="City")
+    state       : str   = Field("", description="State/region")
+    stars       : float = Field(3.5, description="Business average star rating")
+    review_count: int   = Field(0,   description="Number of existing reviews")
 
 
 class SimulateRequest(BaseModel):
-    user_id: str
-    business_id: str
-    # Optional context the judge may pass
-    product_details: dict = {}
+    user_id        : str            = Field(..., description="Yelp user ID")
+    business_id    : str            = Field(..., description="Yelp business ID")
+    product_details: ProductDetails = Field(default_factory=ProductDetails)
+
+    model_config = {"json_schema_extra": {"examples": [{
+        "user_id": "yelp_user_abc123",
+        "business_id": "yelp_biz_xyz456",
+        "product_details": {
+            "name": "Chicken Republic", "categories": "Fast Food, Chicken, Restaurants",
+            "city": "Lagos", "state": "LA", "stars": 4.0, "review_count": 212
+        }
+    }]}}
 
 
 class SimulateResponse(BaseModel):
-    predicted_stars: float
-    review_text: str
-    persona_summary: dict = {}
+    predicted_stars   : float
+    review_text       : str
+    persona_summary   : dict
+    rating_confidence : float
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health():
-    return {"status": "ok", "task": "A"}
+    return {"status": "ok", "task": "A — Review Simulator", "ready": _simulator is not None}
 
 
-@app.post("/simulate-review", response_model=SimulateResponse)
+@app.post("/simulate-review", response_model=SimulateResponse, tags=["Task A"],
+          summary="Simulate a user review for a given business")
 async def simulate_review(req: SimulateRequest):
-    # TODO (Day 2): wire in PersonaBuilder + ReviewSimulator
-    return SimulateResponse(
-        predicted_stars=4.0,
-        review_text="[Simulator not yet implemented — scaffold only]",
-    )
+    if _simulator is None:
+        raise HTTPException(503, "Simulator not initialised yet")
+    try:
+        result = _simulator.simulate(
+            user_id=req.user_id,
+            business_id=req.business_id,
+            product_details=req.product_details.model_dump(),
+        )
+        return SimulateResponse(**result)
+    except Exception as e:
+        log.error(f"Simulation error: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
+
+
+@app.post("/simulate-review/batch", tags=["Task A"],
+          summary="Simulate reviews for multiple user-business pairs")
+async def simulate_batch(requests: list[SimulateRequest]):
+    if _simulator is None:
+        raise HTTPException(503, "Simulator not initialised yet")
+    results = []
+    for req in requests:
+        try:
+            r = _simulator.simulate(
+                user_id=req.user_id,
+                business_id=req.business_id,
+                product_details=req.product_details.model_dump(),
+            )
+            results.append({"status": "ok", **r})
+        except Exception as e:
+            results.append({"status": "error", "detail": str(e)})
+    return results

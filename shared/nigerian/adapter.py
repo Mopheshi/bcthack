@@ -26,13 +26,14 @@ log = logging.getLogger(__name__)
 NIGERIAN_LEXICAL_SIGNALS = {
     # Pidgin function words
     "na", "dem", "dey", "abi", "sha", "oya", "wahala", "chop", "wey",
-    "sabi", "gist", "jare", "abeg", "ehen", "chai", "nawa", "shey",
+    "sabi", "gist", "jare", "abeg", "ehen", "chai", "nawa", "shey", "omo",
     # Nigerian food & culture
     "suya", "egusi", "jollof", "puff puff", "akara", "buka", "mama put",
     "eba", "amala", "tuwo", "pepper soup", "nkwobi", "ofe", "banga",
     # Common Nigerian expressions in English
     "how far", "e be like", "no dulling", "correct", "ogbonge",
     "area boys", "danfo", "okada", "mallam", "oga", "madam",
+    "nigeria", "nigerian", "naija",
 }
 
 NIGERIAN_CITIES = {
