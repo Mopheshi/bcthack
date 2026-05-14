@@ -11,7 +11,7 @@ services:
       - ./data:/app/data          # parquet + chroma index
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -29,8 +29,13 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  ui:
+    image: nginx:alpine
+    ports: [ "8080:80" ]
+    volumes: [ "./ui/personarag_ui.html:/usr/share/nginx/html/index.html:ro" ]

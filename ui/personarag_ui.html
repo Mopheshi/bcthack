@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>PersonaRAG — DSN × BCT Hackathon</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700&family=DM+Sans:opsz,wght@9..40,300;9..40,500;9..40,700&display=swap');
+  :root {
+    --navy:#0B1628; --navy2:#111F38; --navy3:#1A2E4A;
+    --gold:#E8B84B; --teal:#2ECFB3; --red:#E05252;
+    --text:#E8EDF5; --muted:#7A8FA8;
+    --border:rgba(255,255,255,0.07); --card:rgba(255,255,255,0.03);
+    --radius:10px; --mono:'Space Mono',monospace; --sans:'DM Sans',sans-serif;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--navy);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh;overflow-x:hidden}
+  body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(232,184,75,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(232,184,75,0.03) 1px,transparent 1px);background-size:40px 40px}
+  #app{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:24px 20px 60px}
+  .header{display:flex;align-items:center;gap:16px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+  .logo-mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--gold),#C47F1A);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:18px;color:var(--navy)}
+  .header-text h1{font-family:var(--mono);font-size:18px;color:var(--gold);letter-spacing:-0.5px}
+  .header-text p{font-size:12px;color:var(--muted);margin-top:2px}
+  .header-text a{color:var(--gold);text-decoration:none}
+  .header-badge{margin-left:auto;font-family:var(--mono);font-size:10px;background:rgba(232,184,75,0.12);border:1px solid rgba(232,184,75,0.3);color:var(--gold);padding:4px 10px;border-radius:20px}
+  .toolbar{display:flex;gap:16px;margin-bottom:14px;align-items:center;flex-wrap:wrap;font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .toolbar-status{display:flex;align-items:center;gap:6px}
+  .status-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);transition:background 0.3s}
+  .status-dot.online{background:var(--teal);box-shadow:0 0 8px var(--teal)}
+  .status-dot.offline{background:var(--red)}
+  .tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--navy2);padding:4px;border-radius:10px;border:1px solid var(--border)}
+  .tab{flex:1;padding:10px 16px;border:none;border-radius:8px;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;transition:all 0.18s;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px}
+  .tab.active{background:var(--navy3);color:var(--gold);box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+  .tab:hover:not(.active){color:var(--text)}
+  .tab-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .panel{display:none}
+  .panel.active{display:block;animation:fadeIn 0.25s ease}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:720px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+  .card-title{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+  .card-title::after{content:'';flex:1;height:1px;background:var(--border)}
+  .field{margin-bottom:14px}
+  label{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:500}
+  .label-hint{font-family:var(--mono);font-size:9px;opacity:0.6}
+  input,textarea{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:13px;padding:10px 12px;outline:none;transition:border-color 0.15s}
+  input:focus,textarea:focus{border-color:rgba(232,184,75,0.4)}
+  textarea{resize:vertical;min-height:72px}
+
+  /* Custom dropdown */
+  .dd{position:relative;user-select:none}
+  .dd-trigger{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:13px;padding:10px 36px 10px 12px;cursor:pointer;text-align:left;transition:all 0.15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dd-trigger:hover{border-color:rgba(232,184,75,0.25)}
+  .dd.open .dd-trigger{border-color:rgba(232,184,75,0.45);box-shadow:0 0 0 3px rgba(232,184,75,0.08)}
+  .dd-trigger.placeholder{color:var(--muted)}
+  .dd-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;transition:transform 0.2s;font-size:9px}
+  .dd.open .dd-arrow{transform:translateY(-50%) rotate(180deg)}
+  .dd-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;background:#15243F;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:6px;max-height:280px;overflow-y:auto;z-index:100;box-shadow:0 12px 32px rgba(0,0,0,0.5),0 4px 8px rgba(0,0,0,0.3);opacity:0;pointer-events:none;transform:translateY(-4px);transition:opacity 0.15s,transform 0.15s;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.15) transparent}
+  .dd-menu::-webkit-scrollbar{width:6px}
+  .dd-menu::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:3px}
+  .dd.open .dd-menu{opacity:1;pointer-events:auto;transform:translateY(0)}
+  .dd-search{width:100%;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:12px;padding:8px 10px;outline:none;margin-bottom:6px}
+  .dd-search:focus{border-color:rgba(232,184,75,0.3)}
+  .dd-option{padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;line-height:1.45;transition:background 0.12s;display:flex;flex-direction:column;gap:2px}
+  .dd-option:hover{background:rgba(232,184,75,0.08)}
+  .dd-option.selected{background:rgba(232,184,75,0.15);color:var(--gold)}
+  .dd-option-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .dd-option.selected .dd-option-sub{color:var(--gold);opacity:0.7}
+  .dd-empty{padding:16px;text-align:center;color:var(--muted);font-size:12px;font-family:var(--mono)}
+
+  .stars-row{display:flex;gap:6px}
+  .star-btn{flex:1;padding:8px 4px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:13px;text-align:center;transition:all 0.15s;color:var(--muted)}
+  .star-btn.active{background:rgba(232,184,75,0.15);border-color:rgba(232,184,75,0.5);color:var(--gold)}
+
+  .btn{width:100%;padding:12px;border:none;border-radius:10px;cursor:pointer;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:0.5px;transition:all 0.18s}
+  .btn-primary{background:linear-gradient(135deg,var(--gold),#C47F1A);color:var(--navy)}
+  .btn-primary:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 4px 16px rgba(232,184,75,0.3)}
+  .btn-primary:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(11,22,40,0.4);border-top-color:var(--navy);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .result-area{margin-top:16px}
+  .result-empty{padding:32px 16px;text-align:center;color:var(--muted);border:1px dashed var(--border);border-radius:var(--radius);font-family:var(--mono);font-size:11px;line-height:1.8}
+  .stars-display{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .star-val{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--gold)}
+  .confidence-bar-wrap{flex:1}
+  .confidence-label{font-size:10px;color:var(--muted);margin-bottom:4px}
+  .confidence-bar{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+  .confidence-fill{height:100%;background:linear-gradient(90deg,var(--teal),var(--gold));transition:width 0.6s}
+  .review-text{background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:16px;font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:break-word}
+  .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .tag{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:20px;border:1px solid}
+  .tag-neutral{background:rgba(122,143,168,0.1);border-color:rgba(122,143,168,0.25);color:var(--muted)}
+  .tag-gold{background:rgba(232,184,75,0.1);border-color:rgba(232,184,75,0.3);color:var(--gold)}
+  .tag-teal{background:rgba(46,207,179,0.1);border-color:rgba(46,207,179,0.3);color:var(--teal)}
+  .tag-red{background:rgba(224,82,82,0.1);border-color:rgba(224,82,82,0.3);color:var(--red)}
+  .rec-list{display:flex;flex-direction:column;gap:10px}
+  .rec-item{background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start;transition:border-color 0.15s}
+  .rec-item:hover{border-color:rgba(232,184,75,0.2)}
+  .rec-rank{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--gold);min-width:22px;padding-top:1px}
+  .rec-body{flex:1;min-width:0}
+  .rec-name{font-weight:700;font-size:14px;margin-bottom:3px}
+  .rec-meta{font-size:11px;color:var(--muted);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rec-reason{font-size:12px;line-height:1.5;opacity:0.85}
+  .rec-score{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--teal);min-width:42px;text-align:right}
+  .error-box{background:rgba(224,82,82,0.08);border:1px solid rgba(224,82,82,0.25);border-radius:10px;padding:12px 16px;color:var(--red);font-size:12px;margin-top:12px;font-family:var(--mono);line-height:1.5}
+  .intent-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(46,207,179,0.08);border:1px solid rgba(46,207,179,0.2);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--teal);font-family:var(--mono);margin-bottom:14px}
+  .convo-box{background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;max-height:140px;overflow-y:auto}
+  .convo-turn{font-size:12px;line-height:1.6;margin-bottom:6px}
+  .convo-turn:last-child{margin-bottom:0}
+  .convo-role{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-right:6px}
+  .convo-role.user{color:var(--gold)}
+  .convo-role.assistant{color:var(--teal)}
+  .add-turn-row{display:flex;gap:6px;align-items:stretch}
+  .add-turn-row>.dd{flex:0 0 110px}
+  .add-turn-row>input{flex:1}
+  .add-turn-btn{padding:0 14px;background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;cursor:pointer;color:var(--text);font-size:13px;transition:all 0.15s;white-space:nowrap}
+  .add-turn-btn:hover{border-color:rgba(232,184,75,0.3);color:var(--gold)}
+  .clear-btn{font-size:10px;font-family:var(--mono);color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 0;margin-top:6px;text-decoration:underline}
+  .clear-btn:hover{color:var(--red)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="logo-mark">PR</div>
+    <div class="header-text">
+      <h1>PersonaRAG</h1>
+      <p>DSN × BCT LLM Agent Challenge 2026 · <a href="https://github.com/Mopheshi/bcthack" target="_blank">github.com/Mopheshi/bcthack</a></p>
+    </div>
+    <div class="header-badge">Hackathon 3.0</div>
+  </header>
+  <div class="toolbar">
+    <div class="toolbar-status"><span class="status-dot" id="status-a"></span>Task A</div>
+    <div class="toolbar-status"><span class="status-dot" id="status-b"></span>Task B</div>
+    <div class="toolbar-status" id="status-text" style="margin-left:auto">checking services…</div>
+  </div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('a')"><span class="tab-dot"></span>Task A — Review Simulator</button>
+    <button class="tab" onclick="switchTab('b')"><span class="tab-dot"></span>Task B — Recommendation</button>
+  </div>
+
+  <div id="panel-a" class="panel active">
+    <div class="cols">
+      <div class="card">
+        <div class="card-title">Input</div>
+        <div class="field"><label>User <span class="label-hint" id="a-uid-hint">cold-start</span></label><div class="dd" id="dd-a-user"></div></div>
+        <div class="field"><label>Business <span class="label-hint">pick a sample, or edit fields</span></label><div class="dd" id="dd-a-biz"></div></div>
+        <div class="field"><label>Business Name</label><input id="a-name" type="text" value="Mama Put Kitchen"/></div>
+        <div class="field"><label>Categories</label><input id="a-cats" type="text" value="Nigerian, African, Restaurants"/></div>
+        <div class="cols" style="gap:10px">
+          <div class="field"><label>City</label><div class="dd" id="dd-a-city"></div></div>
+          <div class="field"><label>State</label><div class="dd" id="dd-a-state"></div></div>
+        </div>
+        <div class="field">
+          <label>Business Avg Stars</label>
+          <div class="stars-row">
+            <button class="star-btn" onclick="setStars(1)">1★</button>
+            <button class="star-btn" onclick="setStars(2)">2★</button>
+            <button class="star-btn" onclick="setStars(3)">3★</button>
+            <button class="star-btn active" onclick="setStars(4)">4★</button>
+            <button class="star-btn" onclick="setStars(5)">5★</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="a-btn" onclick="runSimulate()">▶ SIMULATE REVIEW</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Output</div>
+        <div class="result-area" id="a-result">
+          <div class="result-empty">Pick a user and business,<br>then click Simulate Review.<br><br>✦ Nigerian mode activates automatically<br>when Lagos, Abuja, or Pidgin signals are detected.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="panel-b" class="panel">
+    <div class="cols">
+      <div class="card">
+        <div class="card-title">Input</div>
+        <div class="field"><label>User <span class="label-hint" id="b-uid-hint">cold-start</span></label><div class="dd" id="dd-b-user"></div></div>
+        <div class="field"><label>Context / Request</label><textarea id="b-ctx" placeholder="e.g. Looking for a good suya spot tonight">I want good Nigerian food tonight</textarea></div>
+        <div class="field"><label>Results (top-k)</label><div class="dd" id="dd-b-topk"></div></div>
+        <div class="field">
+          <label>Conversation History <span class="label-hint">optional</span></label>
+          <div class="convo-box" id="b-convo-display"><div style="color:var(--muted);font-size:11px;font-family:var(--mono)">No turns yet</div></div>
+          <div class="add-turn-row">
+            <div class="dd" id="dd-b-role"></div>
+            <input id="b-turn-text" type="text" placeholder="Add a conversation turn…" onkeydown="if(event.key==='Enter')addTurn()"/>
+            <button class="add-turn-btn" onclick="addTurn()">+ Add</button>
+          </div>
+          <button class="clear-btn" onclick="clearTurns()">Clear history</button>
+        </div>
+        <button class="btn btn-primary" id="b-btn" onclick="runRecommend()">▶ GET RECOMMENDATIONS</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Output</div>
+        <div class="result-area" id="b-result">
+          <div class="result-empty">Provide a user and context,<br>then click Get Recommendations.<br><br>✦ Handles cold-start, cross-domain,<br>and multi-turn conversations.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_A='http://localhost:8001',API_B='http://localhost:8002';
+let selectedStars=4,conversationHistory=[],metadata=null;
+const ddState={};
+
+function createDropdown(elId,opts){const el=document.getElementById(elId);if(!el)return;ddState[elId]={value:opts.value||null,options:opts.options||[],placeholder:opts.placeholder||'Select…',onChange:opts.onChange,searchable:opts.searchable!==false,search:'',opened:false};renderDropdown(elId)}
+function setDropdownOptions(elId,options){if(!ddState[elId])return;ddState[elId].options=options;renderDropdown(elId)}
+function setDropdownValue(elId,value){if(!ddState[elId])return;ddState[elId].value=value;renderDropdown(elId)}
+function renderDropdown(elId){const el=document.getElementById(elId),s=ddState[elId];const sel=s.options.find(o=>o.value===s.value);const trigLabel=sel?sel.label:s.placeholder;const trigCls=sel?'dd-trigger':'dd-trigger placeholder';const filtered=s.search?s.options.filter(o=>(o.label||'').toLowerCase().includes(s.search.toLowerCase())):s.options;el.className='dd'+(s.opened?' open':'');el.innerHTML=`<button class="${trigCls}" onclick="toggleDropdown('${elId}',event)">${escHtml(trigLabel)}</button><span class="dd-arrow">▼</span><div class="dd-menu">${s.searchable&&s.options.length>6?`<input class="dd-search" placeholder="Search…" oninput="ddSearch('${elId}',this.value)" onclick="event.stopPropagation()"/>`:''}${filtered.length===0?'<div class="dd-empty">No matches</div>':filtered.map(o=>`<div class="dd-option${o.value===s.value?' selected':''}" onclick="selectDropdown('${elId}','${escAttr(o.value)}',event)"><span>${escHtml(o.label)}</span>${o.sub?`<span class="dd-option-sub">${escHtml(o.sub)}</span>`:''}</div>`).join('')}</div>`}
+function toggleDropdown(elId,e){e.stopPropagation();for(const id in ddState){if(id!==elId&&ddState[id].opened){ddState[id].opened=false;renderDropdown(id)}}ddState[elId].opened=!ddState[elId].opened;if(ddState[elId].opened)ddState[elId].search='';renderDropdown(elId)}
+function selectDropdown(elId,value,e){e.stopPropagation();const s=ddState[elId];s.value=value;s.opened=false;renderDropdown(elId);if(s.onChange)s.onChange(value,s.options.find(o=>o.value===value))}
+function ddSearch(elId,q){ddState[elId].search=q;renderDropdown(elId)}
+document.addEventListener('click',()=>{let dirty=false;for(const id in ddState){if(ddState[id].opened){ddState[id].opened=false;dirty=true}}if(dirty)for(const id in ddState)renderDropdown(id)});
+function getDropdownValue(elId){return ddState[elId]?.value}
+
+async function init(){
+  createDropdown('dd-b-topk',{options:[3,5,10].map(n=>({value:String(n),label:`${n} recommendations`})),value:'5',placeholder:'Top-k',searchable:false});
+  createDropdown('dd-b-role',{options:[{value:'user',label:'User'},{value:'assistant',label:'Assistant'}],value:'user',placeholder:'Role',searchable:false});
+  await checkServices();
+  setupUserDropdowns();
+  setupBusinessDropdown();
+  setupCityStateDropdowns();
+}
+
+async function checkServices(){
+  const dotA=document.getElementById('status-a'),dotB=document.getElementById('status-b'),txt=document.getElementById('status-text');
+  let okA=false,okB=false,meta=null;
+  try{const r=await fetch(`${API_A}/health`,{signal:AbortSignal.timeout(3000)});okA=r.ok}catch(e){}
+  try{const r=await fetch(`${API_B}/health`,{signal:AbortSignal.timeout(3000)});okB=r.ok}catch(e){}
+  if(okA||okB){try{const r=await fetch(`${okA?API_A:API_B}/metadata`,{signal:AbortSignal.timeout(5000)});if(r.ok)meta=await r.json()}catch(e){}}
+  metadata=meta||{top_users:[],top_cities:[],top_states:[],sample_businesses:[]};
+  dotA.className='status-dot '+(okA?'online':'offline');
+  dotB.className='status-dot '+(okB?'online':'offline');
+  txt.textContent=(okA&&okB)?`Connected · ${metadata.top_users.length} users · ${metadata.sample_businesses.length} businesses`:'One or more services offline';
+}
+
+function setupUserDropdowns(){
+  const opts=[{value:'__cold__',label:'Cold-start user (no history)',sub:'New user — uses dataset defaults'},...metadata.top_users.map(u=>({value:u.user_id,label:`${u.user_id.slice(0,12)}… · ${u.review_count} reviews`,sub:`${u.mean_stars?.toFixed(1)||'?'}★ avg · ${u.rating_bias_label||'neutral'} rater`}))];
+  ['dd-a-user','dd-b-user'].forEach(id=>{
+    createDropdown(id,{options:opts,placeholder:'Select a user…',value:'__cold__',onChange:(v)=>{const hintEl=document.getElementById(id==='dd-a-user'?'a-uid-hint':'b-uid-hint');if(hintEl)hintEl.textContent=v==='__cold__'?'cold-start':`${v.slice(0,8)}…`}});
+  });
+}
+
+function setupBusinessDropdown(){
+  const opts=[{value:'__custom__',label:'Custom (fill fields manually)',sub:'Use the inputs below'},...metadata.sample_businesses.map(b=>({value:b.business_id,label:b.biz_name,sub:`${b.categories?.slice(0,50)||''} · ${b.city}, ${b.state}`}))];
+  const initVal=metadata.sample_businesses.length>0?metadata.sample_businesses[0].business_id:'__custom__';
+  createDropdown('dd-a-biz',{options:opts,placeholder:'Pick a sample business…',value:initVal,onChange:(v)=>{if(v==='__custom__')return;const biz=metadata.sample_businesses.find(b=>b.business_id===v);if(!biz)return;document.getElementById('a-name').value=biz.biz_name||'';document.getElementById('a-cats').value=biz.categories||'';if(ddState['dd-a-city'])setDropdownValue('dd-a-city',biz.city||'__custom__');if(ddState['dd-a-state'])setDropdownValue('dd-a-state',biz.state||'__custom__');setStars(Math.round(biz.biz_avg_stars||4))}});
+  if(initVal&&initVal!=='__custom__'){const biz=metadata.sample_businesses.find(b=>b.business_id===initVal);if(biz){document.getElementById('a-name').value=biz.biz_name||'';document.getElementById('a-cats').value=biz.categories||''}}
+}
+
+function setupCityStateDropdowns(){
+  const cityOpts=[{value:'__custom__',label:'Custom',sub:''},...metadata.top_cities.map(c=>({value:c.city,label:c.city,sub:`${c.state} · ${c.count?.toLocaleString()} reviews`})),{value:'Lagos',label:'Lagos',sub:'Nigerian demo'},{value:'Abuja',label:'Abuja',sub:'Nigerian demo'}];
+  createDropdown('dd-a-city',{options:cityOpts,placeholder:'Pick a city…',value:'Lagos'});
+  const stateOpts=[{value:'__custom__',label:'Custom',sub:''},...metadata.top_states.map(s=>({value:s.state,label:s.state,sub:`${s.count?.toLocaleString()} reviews`})),{value:'LA',label:'LA',sub:'Lagos demo'},{value:'FC',label:'FC',sub:'Abuja FCT demo'}];
+  createDropdown('dd-a-state',{options:stateOpts,placeholder:'Pick a state…',value:'LA'});
+}
+
+function switchTab(t){document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',(i===0&&t==='a')||(i===1&&t==='b')));document.getElementById('panel-a').classList.toggle('active',t==='a');document.getElementById('panel-b').classList.toggle('active',t==='b')}
+function setStars(n){selectedStars=n;document.querySelectorAll('.star-btn').forEach((btn,i)=>btn.classList.toggle('active',i+1===n))}
+
+function addTurn(){const role=getDropdownValue('dd-b-role')||'user',text=document.getElementById('b-turn-text').value.trim();if(!text)return;conversationHistory.push({role,content:text});document.getElementById('b-turn-text').value='';renderConvo()}
+function clearTurns(){conversationHistory=[];renderConvo()}
+function renderConvo(){const el=document.getElementById('b-convo-display');if(!conversationHistory.length){el.innerHTML='<div style="color:var(--muted);font-size:11px;font-family:var(--mono)">No turns yet</div>';return}el.innerHTML=conversationHistory.map(t=>`<div class="convo-turn"><span class="convo-role ${t.role}">${t.role}</span><span style="color:var(--text)">${escHtml(t.content)}</span></div>`).join('');el.scrollTop=el.scrollHeight}
+
+async function runSimulate(){
+  const btn=document.getElementById('a-btn'),result=document.getElementById('a-result');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>SIMULATING…';result.innerHTML='';
+  const userVal=getDropdownValue('dd-a-user')||'__cold__',bizVal=getDropdownValue('dd-a-biz')||'__custom__',cityVal=getDropdownValue('dd-a-city'),stateVal=getDropdownValue('dd-a-state');
+  const payload={user_id:userVal==='__cold__'?`cold_user_${Date.now()}`:userVal,business_id:bizVal==='__custom__'?`custom_biz_${Date.now()}`:bizVal,product_details:{name:document.getElementById('a-name').value.trim(),categories:document.getElementById('a-cats').value.trim(),city:cityVal==='__custom__'?'':(cityVal||''),state:stateVal==='__custom__'?'':(stateVal||''),stars:selectedStars,review_count:88}};
+  try{
+    const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),120_000);
+    const res=await fetch(`${API_A}/simulate-review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:ctrl.signal});
+    clearTimeout(timer);
+    if(!res.ok){const errText=await res.text();throw new Error(`HTTP ${res.status}: ${errText.slice(0,300)}`)}
+    renderA(await res.json(),result);
+  }catch(e){const msg=e.name==='AbortError'?'Request timed out after 120 seconds':e.message;result.innerHTML=`<div class="error-box">⚠ ${escHtml(msg)}<br><br>Task A at ${API_A}</div>`}
+  btn.disabled=false;btn.innerHTML='▶ SIMULATE REVIEW';
+}
+
+function renderA(data,el){
+  const ps=data.predicted_stars||0,stars='★'.repeat(Math.round(ps))+'☆'.repeat(5-Math.round(ps)),conf=Math.round((data.rating_confidence||0)*100),p=data.persona_summary||{};
+  const nb=p.nigerian?'<span class="tag tag-gold">🇳🇬 Nigerian Mode</span>':'',cb=p.is_cold?'<span class="tag tag-red">Cold Start</span>':'<span class="tag tag-teal">Warm User</span>',bb=p.rating_bias?`<span class="tag tag-neutral">${p.rating_bias}</span>`:'',sb=p.style?`<span class="tag tag-neutral">${p.style}</span>`:'',cats=(p.top_cats||[]).slice(0,3).map(c=>`<span class="tag tag-neutral">${escHtml(c)}</span>`).join('');
+  el.innerHTML=`<div class="stars-display"><div class="star-val">${ps}</div><div style="color:var(--gold);font-size:16px;letter-spacing:1px">${stars}</div><div class="confidence-bar-wrap"><div class="confidence-label">Confidence ${conf}%</div><div class="confidence-bar"><div class="confidence-fill" style="width:${conf}%"></div></div></div></div><div class="review-text">${escHtml(data.review_text||'')}</div><div class="tag-row">${nb}${cb}${bb}${sb}${cats}</div>${p.review_count!==undefined?`<div style="color:var(--muted);font-size:11px;margin-top:10px;font-family:var(--mono)">Based on ${p.review_count} historical reviews</div>`:''}`;
+}
+
+async function runRecommend(){
+  const btn=document.getElementById('b-btn'),result=document.getElementById('b-result');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>REASONING…';result.innerHTML='';
+  const userVal=getDropdownValue('dd-b-user')||'__cold__',topkVal=getDropdownValue('dd-b-topk')||'5';
+  const payload={user_id:userVal==='__cold__'?`cold_user_${Date.now()}`:userVal,context:document.getElementById('b-ctx').value.trim(),conversation_history:conversationHistory,top_k:parseInt(topkVal)};
+  try{
+    const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),120_000);
+    const res=await fetch(`${API_B}/recommend`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:ctrl.signal});
+    clearTimeout(timer);
+    if(!res.ok){const errText=await res.text();throw new Error(`HTTP ${res.status}: ${errText.slice(0,300)}`)}
+    renderB(await res.json(),result);
+  }catch(e){const msg=e.name==='AbortError'?'Request timed out after 120 seconds':e.message;result.innerHTML=`<div class="error-box">⚠ ${escHtml(msg)}<br><br>Task B at ${API_B}</div>`}
+  btn.disabled=false;btn.innerHTML='▶ GET RECOMMENDATIONS';
+}
+
+function renderB(data,el){
+  const p=data.persona_summary||{},recs=data.recommendations||[];
+  const nb=p.nigerian?'<span class="tag tag-gold">🇳🇬 Nigerian Mode</span>':'',cb=p.is_cold?'<span class="tag tag-red">Cold Start</span>':'<span class="tag tag-teal">Warm User</span>';
+  const items=recs.length?recs.map((r,i)=>`<div class="rec-item"><div class="rec-rank">#${i+1}</div><div class="rec-body"><div class="rec-name">${escHtml(r.name||r.business_id)}</div><div class="rec-meta">${escHtml([r.categories,r.city].filter(Boolean).join(' · ').slice(0,80))}</div><div class="rec-reason">${escHtml(r.reason||'')}</div></div><div class="rec-score">${r.stars?r.stars+'★':''}<br><span style="color:var(--muted);font-size:10px">${r.score?(r.score*100).toFixed(0)+'%':''}</span></div></div>`).join(''):'<div style="color:var(--muted);font-size:12px;padding:12px 0">No recommendations returned.</div>';
+  el.innerHTML=`${data.search_intent?`<div class="intent-chip">⟳ ${escHtml(data.search_intent)}</div>`:''}<div class="tag-row" style="margin-bottom:14px">${nb}${cb}</div><div class="rec-list">${items}</div>`;
+}
+
+function escHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function escAttr(s){return String(s??'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}
+
+init();
+</script>
+</body>
+</html>

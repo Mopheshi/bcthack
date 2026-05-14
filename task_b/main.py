@@ -3,10 +3,14 @@ task_b/main.py  —  Recommendation Agent API
 POST /recommend
 POST /recommend/multiturn
 GET  /health
+GET  /metadata        ← NEW: dropdown data for the UI
 """
 
+import json
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -18,29 +22,40 @@ from task_b.recommender import RecommendationAgent
 logging.basicConfig(level="INFO", format="%(asctime)s  %(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
-_agent: Optional[RecommendationAgent] = None
+PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "./data/processed"))
+
+_agent   : Optional[RecommendationAgent] = None
+_metadata: Optional[dict] = None
+
+
+def _load_metadata() -> dict:
+    path = PROCESSED_DIR / "ui_metadata.json"
+    if not path.exists():
+        log.warning(f"ui_metadata.json not found at {path}")
+        return {"top_users": [], "top_cities": [], "top_states": [],
+                "top_categories": [], "sample_businesses": []}
+    with open(path) as f:
+        return json.load(f)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _agent
-    log.info("Starting Task B — loading data ...")
-    _agent = RecommendationAgent()
+    global _agent, _metadata
+    log.info("Starting Task B - loading data ...")
+    _agent    = RecommendationAgent()
+    _metadata = _load_metadata()
     log.info("Task B ready")
     yield
 
 
 app = FastAPI(
     title="BCT Hackathon — Task B: Recommendation Agent",
-    description="Agentic LLM recommender that reasons before recommending. Handles cold-start, cross-domain, and multi-turn.",
-    version="1.0.0",
+    description="Agentic LLM recommender. Handles cold-start, cross-domain, multi-turn.",
+    version="1.1.0",
     lifespan=lifespan,
 )
-
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-
-# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class ConversationTurn(BaseModel):
     role   : str = Field(..., description="'user' or 'assistant'")
@@ -48,17 +63,10 @@ class ConversationTurn(BaseModel):
 
 
 class RecommendRequest(BaseModel):
-    user_id             : str                    = Field(...,  description="Yelp user ID")
-    context             : str                    = Field("",   description="Current request or mood e.g. 'Looking for a good suya spot tonight'")
-    conversation_history: list[ConversationTurn] = Field([], description="Prior conversation turns for multi-turn support")
-    top_k               : int                    = Field(10,  description="Number of recommendations to return (max 10)", ge=1, le=10)
-
-    model_config = {"json_schema_extra": {"examples": [{
-        "user_id": "yelp_user_abc123",
-        "context": "I want somewhere good for a Friday night out with friends",
-        "conversation_history": [],
-        "top_k": 5
-    }]}}
+    user_id             : str                    = Field(..., description="Yelp user ID")
+    context             : str                    = Field("",  description="Current request or mood")
+    conversation_history: list[ConversationTurn] = Field([],  description="Prior conversation turns")
+    top_k               : int                    = Field(10,  description="Number of recs", ge=1, le=10)
 
 
 class RecommendItem(BaseModel):
@@ -78,15 +86,19 @@ class RecommendResponse(BaseModel):
     search_intent   : str
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
 @app.get("/health", tags=["System"])
 def health():
-    return {"status": "ok", "task": "B — Recommendation Agent", "ready": _agent is not None}
+    return {"status": "ok", "task": "B - Recommendation Agent", "ready": _agent is not None}
 
 
-@app.post("/recommend", response_model=RecommendResponse, tags=["Task B"],
-          summary="Get personalised recommendations for a user")
+@app.get("/metadata", tags=["System"], summary="Dropdown options for the UI")
+def metadata():
+    if _metadata is None:
+        raise HTTPException(503, "Metadata not loaded yet")
+    return _metadata
+
+
+@app.post("/recommend", response_model=RecommendResponse, tags=["Task B"])
 async def recommend(req: RecommendRequest):
     if _agent is None:
         raise HTTPException(503, "Agent not initialised yet")
@@ -108,11 +120,6 @@ async def recommend(req: RecommendRequest):
         raise HTTPException(500, str(e))
 
 
-@app.post("/recommend/multiturn", response_model=RecommendResponse, tags=["Task B"],
-          summary="Multi-turn recommendation — continues an existing conversation")
+@app.post("/recommend/multiturn", response_model=RecommendResponse, tags=["Task B"])
 async def recommend_multiturn(req: RecommendRequest):
-    """
-    Same as /recommend but explicitly for multi-turn flows.
-    Pass the full conversation_history to maintain context across turns.
-    """
     return await recommend(req)
