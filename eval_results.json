@@ -1,0 +1,16 @@
+{
+  "task_b": {
+    "open_retrieval": {
+      "n_evaluated": 200,
+      "ndcg@10": 0.0421,
+      "hit_rate@10": 0.05,
+      "note": "Retrieval from full 150K business corpus"
+    },
+    "candidate_100": {
+      "n_evaluated": 200,
+      "ndcg@10": 0.0426,
+      "hit_rate@10": 0.05,
+      "note": "Reranking within top-100 candidate set (standard protocol)"
+    }
+  }
+}
