@@ -1,0 +1,138 @@
+/* ── Custom Dropdown (v4 — portaled menu) ─────────────────────────────────── */
+
+.dd {
+  position: relative;
+  user-select: none;
+}
+
+.dd-trigger {
+  width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  padding: 10px 36px 10px 12px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.dd-trigger:hover { border-color: rgba(232, 184, 75, 0.25); }
+
+.dd.open .dd-trigger {
+  border-color: rgba(232, 184, 75, 0.45);
+  box-shadow: 0 0 0 3px rgba(232, 184, 75, 0.08);
+}
+
+.dd-trigger.placeholder { color: var(--muted); }
+
+.dd-arrow {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  transition: transform var(--dur-mid) var(--ease-out);
+  font-size: 9px;
+}
+
+.dd.open .dd-arrow {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+/* ── Portaled menu (lives in document.body) ──────────────────────────────── */
+
+.dd-menu-portal {
+  /* Hidden by default; .open class makes it visible */
+  position: fixed;
+  background: #0B1221;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--r-lg);
+  padding: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 10000;                /* well above any card stacking context */
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px) scale(0.98);
+  transform-origin: top center;
+  transition: opacity var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.dd-menu-portal.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.dd-menu-portal::-webkit-scrollbar { width: 6px; }
+.dd-menu-portal::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.dd-search {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 8px 10px;
+  outline: none;
+  margin-bottom: 6px;
+}
+
+.dd-search:focus { border-color: rgba(232, 184, 75, 0.3); }
+
+.dd-option {
+  padding: 9px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.dd-option:hover { background: rgba(232, 184, 75, 0.08); }
+
+.dd-option.selected {
+  background: rgba(232, 184, 75, 0.15);
+  color: var(--gold);
+}
+
+.dd-option-sub {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.dd-option.selected .dd-option-sub {
+  color: var(--gold);
+  opacity: 0.7;
+}
+
+.dd-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--mono);
+}

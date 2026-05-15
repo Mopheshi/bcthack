@@ -8,14 +8,23 @@ services:
       - "${TASK_A_PORT:-8001}:8001"
     env_file: .env
     volumes:
-      - ./data:/app/data          # parquet + chroma index
+      - ./data:/app/data
+    # Important: disable auto-restart while we verify startup behaves.
+    # Re-enable to "unless-stopped" after first successful boot.
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
+      test: [ "CMD", "python", "-c",
+              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8001/health',timeout=5).status==200 else 1)" ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s             # persona builder takes ~30s to load parquet
+      retries: 5
+      # start_period must exceed our worst-case eager-load:
+      #   users.parquet load          ~1s
+      #   reviews.parquet load        ~80s  (5.78M rows, 16GB RAM)
+      #   numpy argsort + dict build  ~20s
+      #   total worst case            ~100-110s
+      # Health check failures during start_period do NOT count against retries.
+      start_period: 180s
 
   task_b:
     build:
@@ -29,13 +38,16 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')" ]
+      test: [ "CMD", "python", "-c",
+              "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health',timeout=5).status==200 else 1)" ]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 180s
 
   ui:
     image: nginx:alpine
+    container_name: bcthack-ui
     ports: [ "8080:80" ]
-    volumes: [ "./ui/personarag_ui.html:/usr/share/nginx/html/index.html:ro" ]
+    volumes: [ "./ui:/usr/share/nginx/html:ro" ]
+    restart: unless-stopped

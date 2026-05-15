@@ -1,0 +1,207 @@
+/* ── Skeleton shimmer loading states ─────────────────────────────────────── */
+
+.skeleton {
+  position: relative;
+  background: linear-gradient(
+    90deg,
+    var(--bg-elev) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    var(--bg-elev) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease-in-out) infinite;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Skeleton building blocks ────────────────────────────────────────────── */
+.sk-line {
+  height: 12px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+}
+
+.sk-line:last-child { margin-bottom: 0; }
+
+.sk-w-30  { width: 30%; }
+.sk-w-40  { width: 40%; }
+.sk-w-50  { width: 50%; }
+.sk-w-60  { width: 60%; }
+.sk-w-70  { width: 70%; }
+.sk-w-80  { width: 80%; }
+.sk-w-90  { width: 90%; }
+.sk-w-100 { width: 100%; }
+
+.sk-h-14 { height: 14px; }
+.sk-h-18 { height: 18px; }
+.sk-h-28 { height: 28px; }
+.sk-h-44 { height: 44px; }
+.sk-h-80 { height: 80px; }
+
+/* ── Task A skeleton layout ──────────────────────────────────────────────── */
+.skeleton-task-a {
+  animation: fade-up 200ms var(--ease-out) both;
+}
+
+.sk-stars-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sk-star-val {
+  width: 50px; height: 28px;
+  flex-shrink: 0;
+}
+
+.sk-stars-glyphs {
+  width: 100px; height: 18px;
+}
+
+.sk-confidence {
+  flex: 1;
+}
+
+.sk-confidence-label {
+  width: 90px; height: 10px;
+  margin-bottom: 6px;
+}
+
+.sk-confidence-bar {
+  width: 100%; height: 5px;
+}
+
+.sk-review-text {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.015);
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.sk-review-text::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 12px; bottom: 12px;
+  width: 2px;
+  background: var(--bg-elev);
+  border-radius: 1px;
+  opacity: 0.6;
+}
+
+.sk-tag-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sk-tag {
+  width: 70px; height: 18px;
+  border-radius: 20px;
+}
+
+/* ── Task B skeleton layout ──────────────────────────────────────────────── */
+.skeleton-task-b {
+  animation: fade-up 200ms var(--ease-out) both;
+}
+
+.sk-intent-chip {
+  width: 200px; height: 22px;
+  border-radius: 20px;
+  margin-bottom: 14px;
+}
+
+.sk-status-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.sk-rec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sk-rec-item {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sk-rec-rank { width: 18px; height: 11px; flex-shrink: 0; margin-top: 4px; }
+
+.sk-rec-body { flex: 1; }
+
+.sk-rec-name  { width: 60%; height: 14px; margin-bottom: 6px; }
+.sk-rec-meta  { width: 80%; height: 10px; margin-bottom: 8px; }
+.sk-rec-reason{ width: 95%; height: 10px; margin-bottom: 4px; }
+.sk-rec-reason-2 { width: 70%; height: 10px; }
+
+.sk-rec-score {
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.sk-rec-score-val { width: 36px; height: 12px; margin-left: auto; margin-bottom: 4px; }
+.sk-rec-score-pct { width: 28px; height: 9px; margin-left: auto; }
+
+/* ── Loading message strip ───────────────────────────────────────────────── */
+.loading-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(46, 207, 179, 0.06);
+  border: 1px solid rgba(46, 207, 179, 0.15);
+  border-radius: var(--r-md);
+  margin-bottom: 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--teal);
+}
+
+.loading-strip-spinner {
+  width: 10px; height: 10px;
+  border: 2px solid rgba(46, 207, 179, 0.2);
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+
+.loading-strip-text {
+  flex: 1;
+  /* Subtle text shimmer */
+  background: linear-gradient(
+    90deg,
+    var(--teal) 0%,
+    rgba(255, 255, 255, 0.9) 50%,
+    var(--teal) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: text-shimmer 2s var(--ease-in-out) infinite;
+}
+
+@keyframes text-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.loading-strip-time {
+  font-size: 10px;
+  opacity: 0.7;
+}
