@@ -1,31 +1,23 @@
 """
-task_b/recommender.py  (v4 — production tuned)
------------------------------------------------
-LATENCY FIXES over v3:
+task_b/recommender.py  (v5 — shared persona builder)
+-----------------------------------------------------
+CHANGE FROM v4
+  RecommendationAgent now accepts an optional persona_builder argument.
+  When the consolidated app passes the same PersonaBuilder used by Task A,
+  the persona store is held in memory exactly once for the whole service.
+  If none is passed (standalone use), it builds its own — backward compatible.
 
-1. Single retrieval call. v3 did one bootstrap retrieval + sometimes a
-   second targeted one and merged results. That's 2x the ChromaDB calls
-   and 2x the candidates to rerank. v4 does ONE retrieval, with the
-   intent if available, falling back to the context otherwise.
-
-2. Capped candidate list to 15 (was 20). Smaller rerank prompts =
-   shorter Gemini response time. Empirically, the top item is almost
-   always in the top 10 candidates anyway.
-
-3. Tightened the rerank prompt. Removed the verbose few-shot example
-   and replaced with a concise schema description. Cuts ~150 input
-   tokens which translates to ~1-2s saved on Gemini.
-
-4. Hard cap on conversation history at 2 most recent turns
-   (was 4). Multi-turn flows rarely need more context than this.
-
-5. Reduced max_tokens for intent reasoning from 80 to 40.
+  Persona lookups are now O(1) dict reads against the precomputed store,
+  so the previous "parallelise persona build" concerns are moot — the
+  only real latency is the two LLM calls (intent + rerank), which still
+  run with retrieval overlapped.
 """
 
 import asyncio
 import json
 import logging
 import os
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -44,9 +36,11 @@ TOP_K_RETURN      = int(os.getenv("TOP_K_RETURN",      "10"))
 
 class RecommendationAgent:
 
-    def __init__(self):
+    def __init__(self, persona_builder: Optional[PersonaBuilder] = None):
         log.info("Initialising RecommendationAgent ...")
-        self.persona_builder = PersonaBuilder()
+        # Reuse a shared PersonaBuilder if provided (consolidated app),
+        # otherwise build our own (standalone use).
+        self.persona_builder = persona_builder or PersonaBuilder()
         self.vector_store    = VectorStore()
         self._llm            = None
         log.info("RecommendationAgent ready")
@@ -61,15 +55,9 @@ class RecommendationAgent:
         conversation_history = conversation_history or []
         top_k = min(top_k, TOP_K_RETURN)
 
-        # Stage 0: build persona — fast in-memory lookup
+        # Stage 0: persona — O(1) dict lookup
         persona = self.persona_builder.build(user_id)
         persona = nigerian_apply(persona, user_context=context)
-
-        # Stages 1 + 2 in parallel:
-        #   - intent reasoning (LLM call, ~3-8s)
-        #   - bootstrap retrieval using raw context (ChromaDB, ~50ms)
-        # If intent comes back differently we use it; otherwise we keep
-        # the bootstrap result. NO second retrieval.
 
         bootstrap_query = (
             context
@@ -77,13 +65,13 @@ class RecommendationAgent:
             or "restaurants"
         )
 
-        intent_task     = asyncio.to_thread(
+        # Stages 1 + 2 overlapped: intent reasoning (LLM) || retrieval (ChromaDB)
+        intent_task   = asyncio.to_thread(
             self._reason_intent_sync, persona, context, conversation_history
         )
-        retrieve_task   = asyncio.to_thread(
+        retrieve_task = asyncio.to_thread(
             self._retrieve_sync, persona, bootstrap_query
         )
-
         search_intent, candidates = await asyncio.gather(
             intent_task, retrieve_task, return_exceptions=True
         )
@@ -97,12 +85,9 @@ class RecommendationAgent:
 
         log.info(f"Search intent [{user_id}]: {search_intent}")
 
-        # Optional: if the intent is meaningfully different AND we have
-        # very few candidates, do one targeted retrieval. Otherwise skip.
+        # One targeted retrieval only if the first came back sparse
         if len(candidates) < 5 and search_intent != bootstrap_query:
-            extra = await asyncio.to_thread(
-                self._retrieve_sync, persona, search_intent
-            )
+            extra = await asyncio.to_thread(self._retrieve_sync, persona, search_intent)
             seen = {c["business_id"] for c in candidates}
             for c in extra:
                 if c["business_id"] not in seen:
@@ -121,14 +106,11 @@ class RecommendationAgent:
             "search_intent"   : search_intent,
         }
 
-    # ── Sync internal methods ────────────────────────────────
+    # ── Sync internals (run via asyncio.to_thread) ───────────────────────────
 
     def _reason_intent_sync(self, persona, context, history) -> str:
-        top_cats   = persona.get("top_categories", [])[:3]
-        mean_stars = persona.get("mean_stars", 3.5)
-        is_cold    = persona.get("is_cold", False)
+        top_cats = persona.get("top_categories", [])[:3]
 
-        # Cap history at 2 most recent turns to keep prompt small
         history_str = ""
         if history:
             turns = history[-2:]
@@ -138,10 +120,9 @@ class RecommendationAgent:
             )
 
         system = (
-            "You produce a short search query of 5-10 words for a recommendation system. "
-            "Output ONLY the query. No quotes, no punctuation at the end."
+            "You produce a short search query of 5-10 words for a recommendation "
+            "system. Output ONLY the query. No quotes, no trailing punctuation."
         )
-
         user = (
             f"Request: {context or 'general recommendation'}\n"
             f"User prefers: {', '.join(top_cats) if top_cats else 'unknown'}\n"
@@ -159,11 +140,7 @@ class RecommendationAgent:
             return context or ", ".join(top_cats[:3]) or "restaurants"
 
     def _retrieve_sync(self, persona, query) -> list:
-        candidates = self.vector_store.query_businesses(
-            query=query, n=TOP_K_RETRIEVE
-        )
-
-        # Top-up via category fallback if retrieval was sparse
+        candidates = self.vector_store.query_businesses(query=query, n=TOP_K_RETRIEVE)
         top_cats = persona.get("top_categories", [])
         if len(candidates) < 5 and top_cats:
             extra = self.vector_store.query_by_category(top_cats, n=TOP_K_RETRIEVE)
@@ -171,14 +148,12 @@ class RecommendationAgent:
             for biz in extra:
                 if biz["business_id"] not in seen:
                     candidates.append(biz)
-
         return candidates[:TOP_K_RETRIEVE]
 
     def _rerank_sync(self, persona, candidates, search_intent, top_k) -> list:
         if not candidates:
             return []
 
-        # Compact candidate list
         candidate_list = "\n".join(
             f"{i+1}. id={c['business_id']} | {c.get('name','?')} | "
             f"{(c.get('categories','') or '')[:50]}"
@@ -187,36 +162,32 @@ class RecommendationAgent:
 
         system = build_system_prompt(
             _RERANK_SYSTEM.format(
-                top_k        = top_k,
-                mean_stars   = persona.get("mean_stars", 3.5),
-                bias         = persona.get("rating_bias", "neutral"),
-                top_cats     = ", ".join(persona.get("top_categories", ["any"])[:3]),
-                is_cold      = persona.get("is_cold", False),
-                search_intent= search_intent,
+                top_k         = top_k,
+                mean_stars    = persona.get("mean_stars", 3.5),
+                bias          = persona.get("rating_bias", "neutral"),
+                top_cats      = ", ".join(persona.get("top_categories", ["any"])[:3]),
+                is_cold       = persona.get("is_cold", False),
+                search_intent = search_intent,
             ),
             persona,
             task="recommend",
         )
-
         user = (
             f"Pick the best {top_k} from these {len(candidates)} businesses.\n\n"
             f"{candidate_list}\n\n"
-            f"Return JSON: "
-            f'{{"ranked":[{{"business_id":"...","score":0.95,"reason":"..."}}]}}'
+            f'Return JSON: {{"ranked":[{{"business_id":"...","score":0.95,"reason":"..."}}]}}'
         )
 
         try:
             raw = self._get_llm().complete_json(
-                system=system, user=user,
-                max_tokens=LLM_RERANK_TOKENS,
+                system=system, user=user, max_tokens=LLM_RERANK_TOKENS,
             )
             parsed = json.loads(raw)
             ranked_map = {item["business_id"]: item for item in parsed.get("ranked", [])}
         except Exception as e:
-            log.warning(f"LLM reranking failed ({e}) - using distance fallback")
+            log.warning(f"LLM reranking failed ({e}) — distance fallback")
             return _distance_fallback(candidates, top_k)
 
-        # Project ranked LLM scores back onto our candidate metadata
         output = []
         for c in candidates:
             bid = c["business_id"]
@@ -227,12 +198,11 @@ class RecommendationAgent:
                     "name"       : c.get("name", ""),
                     "categories" : c.get("categories", ""),
                     "city"       : c.get("city", ""),
-                    "stars"      : c.get("stars", ""),
+                    "stars"      : str(c.get("stars", "")),
                     "score"      : float(item.get("score", 0.5)),
                     "reason"     : item.get("reason", ""),
                 })
 
-        # Top up with distance fallback if LLM returned too few
         if len(output) < top_k:
             seen = {o["business_id"] for o in output}
             for fb in _distance_fallback(candidates, top_k):
@@ -250,8 +220,6 @@ class RecommendationAgent:
         return self._llm
 
 
-# ── Compact rerank prompt ─────────────────────────────────────────────────────
-
 _RERANK_SYSTEM = """You are a recommendation reranker.
 
 USER: typical {mean_stars:.1f}-star rater ({bias}), prefers {top_cats}. Cold-start: {is_cold}.
@@ -260,8 +228,6 @@ WANTS: {search_intent}
 For each of the top {top_k} businesses, output a score in [0,1] and a one-sentence
 reason matching this specific user's taste."""
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _persona_summary(persona: dict) -> dict:
     return {
@@ -281,7 +247,7 @@ def _distance_fallback(candidates: list, top_k: int) -> list:
             "name"       : c.get("name", ""),
             "categories" : c.get("categories", ""),
             "city"       : c.get("city", ""),
-            "stars"      : c.get("stars", ""),
+            "stars"      : str(c.get("stars", "")),
             "score"      : round(1 - float(c.get("distance", 0.5)), 3),
             "reason"     : "Matched based on semantic similarity to your preferences.",
         }

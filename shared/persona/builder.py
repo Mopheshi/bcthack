@@ -1,28 +1,34 @@
 """
-shared/persona/builder.py  (v5 — disk-cached index)
-----------------------------------------------------
-OPTIMISATION over v4:
-  v4 rebuilt the user_id -> row_indices inverted index on every container
-  startup (~90-120s for 5.78M rows). That blocked Docker healthchecks
-  and caused restart loops.
+shared/persona/builder.py  (v6 — precomputed persona store)
+------------------------------------------------------------
+ARCHITECTURE CHANGE — this is the fix for every startup/RAM problem.
 
-  v5 checks for a pre-built index at data/processed/user_to_idx.pkl.
-  If present (built once by scripts/build_persona_index.py), startup
-  drops from ~90s to ~3-5s. The index is ~30MB on disk.
+OLD (v5 and earlier):
+  Loaded all 5.78M rows of reviews.parquet into RAM at startup, built an
+  inverted index live, composed personas per request. Result: 90s+ boots,
+  Docker healthcheck restart loops, ~3.5 GB RAM per container, two
+  containers impossible on a 16 GB laptop.
 
-  If the pickle is absent, v5 falls back to building the index in memory
-  exactly like v4, so the system still works without the pre-build step.
+NEW (v6):
+  Loads ONLY data/processed/persona_store.parquet — a compact file
+  (~150-250 MB) where every warm-user persona was precomputed at build
+  time by scripts/build_persona_store.py. Startup is 2-3 seconds.
+  reviews.parquet is never opened at runtime.
+
+  Cold-start users (not in the store) get dataset-mean defaults computed
+  on the fly — no data file needed for them at all.
+
+BUILD STEP (run once, locally):
+    python -m scripts.build_persona_store
 """
 
 import os
+import json
 import time
-import pickle
 import logging
-from collections import Counter
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -30,166 +36,103 @@ load_dotenv()
 log = logging.getLogger(__name__)
 
 PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "./data/processed"))
-USERS_PARQ    = PROCESSED_DIR / "users.parquet"
-REVIEWS_PARQ  = PROCESSED_DIR / "reviews.parquet"
-INDEX_PKL     = PROCESSED_DIR / "user_to_idx.pkl"
+STORE_PARQ    = PROCESSED_DIR / "persona_store.parquet"
 
-TOP_K           = int(os.getenv("TOP_K_REVIEWS",            "10"))
-MIN_WARM        = int(os.getenv("MIN_REVIEWS_FOR_WARM_USER", "5"))
-MAX_SNIPPET_LEN = int(os.getenv("MAX_REVIEW_SNIPPET_LEN",    "200"))
+# Dataset-level fallback statistics for cold-start users.
+COLD_MEAN_STARS = float(os.getenv("COLD_MEAN_STARS", "3.63"))
+COLD_MEAN_WC    = float(os.getenv("COLD_MEAN_WC",    "104.8"))
 
 
 class PersonaBuilder:
     """
-    Loads everything at startup.
+    Runtime persona lookup. Instantiate once at app startup.
 
-    Startup timing:
-      - With pre-built index (data/processed/user_to_idx.pkl present): ~5-8s
-      - Without pre-built index (first ever run):                      ~90-120s
-
-    To pre-build the index, run once:
-        python -m scripts.build_persona_index
+    Startup: loads persona_store.parquet (~2-3s) into a dict keyed by
+    user_id. Every build() call after that is an O(1) dict lookup.
     """
 
     def __init__(self):
-        log.info("Loading PersonaBuilder ...")
+        log.info("Loading PersonaBuilder (v6 — persona store) ...")
+        self._store: dict[str, dict] = {}
+        self._load_store()
+        log.info(f"PersonaBuilder ready — {len(self._store):,} warm personas in memory")
 
-        self._users:       Optional[pd.DataFrame] = None
-        self._reviews:     Optional[pd.DataFrame] = None
-        self._user_to_idx: Optional[dict]         = None
-
-        self._load_users()
-        self._load_reviews_and_index()
-
-        log.info("PersonaBuilder ready")
-
-    def _load_users(self):
-        t0 = time.time()
-        try:
-            self._users = pd.read_parquet(USERS_PARQ).set_index("user_id")
-            log.info(f"  users.parquet loaded: {len(self._users):,} users "
-                     f"({time.time()-t0:.1f}s)")
-        except FileNotFoundError:
-            log.warning("users.parquet not found - cold-start only mode")
-
-    def _load_reviews_and_index(self):
-        t0 = time.time()
-        log.info(f"  Loading reviews.parquet ...")
-        df = pd.read_parquet(
-            REVIEWS_PARQ,
-            columns=["user_id", "text", "stars", "categories", "date"],
-        )
-        log.info(f"  reviews.parquet loaded: {len(df):,} rows "
-                 f"({time.time()-t0:.1f}s)")
-        self._reviews = df
-
-        if INDEX_PKL.exists():
-            t0 = time.time()
-            log.info(f"  Loading pre-built index from {INDEX_PKL.name} ...")
-            with open(INDEX_PKL, "rb") as f:
-                self._user_to_idx = pickle.load(f)
-            log.info(f"  Index loaded: {len(self._user_to_idx):,} users "
-                     f"({time.time()-t0:.1f}s)")
-        else:
+    def _load_store(self):
+        if not STORE_PARQ.exists():
             log.warning(
-                "  No pre-built index found - building in memory. "
-                "This adds ~20s to startup. Run "
-                "'python -m scripts.build_persona_index' once to cache it."
+                f"persona_store.parquet not found at {STORE_PARQ}. "
+                "Running in COLD-START-ONLY mode. "
+                "Run 'python -m scripts.build_persona_store' to enable warm users."
             )
-            t0 = time.time()
-            self._user_to_idx = _build_inverted_index(df["user_id"].values)
-            log.info(f"  Index built in memory: {len(self._user_to_idx):,} users "
-                     f"({time.time()-t0:.1f}s)")
+            return
+
+        t0 = time.time()
+        df = pd.read_parquet(STORE_PARQ)
+        # Convert to a plain dict for O(1), GIL-friendly lookups
+        for rec in df.to_dict(orient="records"):
+            uid = str(rec["user_id"])
+            self._store[uid] = {
+                "user_id"        : uid,
+                "is_cold"        : False,
+                "review_count"   : int(rec["review_count"]),
+                "mean_stars"     : float(rec["mean_stars"]),
+                "std_stars"      : float(rec["std_stars"]),
+                "rating_bias"    : str(rec["rating_bias"]),
+                "pct_5_star"     : float(rec["pct_5_star"]),
+                "pct_1_star"     : float(rec["pct_1_star"]),
+                "mean_word_count": float(rec["mean_word_count"]),
+                "style_label"    : str(rec["style_label"]),
+                "top_categories" : _safe_json_list(rec["top_categories"]),
+                "sample_reviews" : _safe_json_list(rec["sample_reviews"]),
+                "nigerian_mode"  : False,
+            }
+        log.info(f"  persona_store.parquet loaded: {len(self._store):,} personas "
+                 f"({time.time()-t0:.1f}s)")
 
     def build(self, user_id: str) -> dict:
-        if self._users is not None and user_id in self._users.index:
-            row = self._users.loc[user_id]
-            if int(row.get("review_count", 0)) >= MIN_WARM:
-                return self._warm_persona(user_id, row)
+        """
+        Return a persona dict for the given user_id.
+        Warm users come from the precomputed store; everyone else gets a
+        cold-start persona built from dataset means.
+        """
+        persona = self._store.get(str(user_id))
+        if persona is not None:
+            # Return a shallow copy so per-request mutation (e.g. the
+            # Nigerian adapter setting nigerian_mode) never corrupts the store.
+            return dict(persona)
         return self._cold_persona(user_id)
-
-    def _warm_persona(self, user_id: str, row: pd.Series) -> dict:
-        indices = self._user_to_idx.get(user_id, [])
-
-        if len(indices) > 0:
-            user_reviews = (
-                self._reviews.iloc[indices]
-                .sort_values("date", ascending=False)
-                .head(TOP_K)
-            )
-
-            sample_texts = [
-                (t[:MAX_SNIPPET_LEN] if isinstance(t, str) else "")
-                for t in user_reviews["text"].tolist()
-            ]
-
-            all_cats = []
-            for cat_str in user_reviews["categories"].dropna():
-                all_cats.extend(c.strip() for c in cat_str.split(",") if c.strip())
-            top_cats = [c for c, _ in Counter(all_cats).most_common(5)]
-        else:
-            sample_texts = []
-            top_cats     = []
-
-        mean_wc = float(row.get("mean_word_count", 100))
-
-        return {
-            "user_id"        : user_id,
-            "is_cold"        : False,
-            "review_count"   : int(row.get("review_count", 0)),
-            "mean_stars"     : float(row.get("mean_stars",  3.5)),
-            "std_stars"      : _safe_float(row.get("std_stars"), 1.0),
-            "rating_bias"    : str(row.get("rating_bias_label", "neutral")),
-            "pct_5_star"     : float(row.get("pct_5_star",  0.0)),
-            "pct_1_star"     : float(row.get("pct_1_star",  0.0)),
-            "mean_word_count": mean_wc,
-            "style_label"    : _style_label(mean_wc),
-            "sample_reviews" : sample_texts,
-            "top_categories" : top_cats,
-            "nigerian_mode"  : False,
-        }
 
     def _cold_persona(self, user_id: str) -> dict:
         return {
-            "user_id"        : user_id,
+            "user_id"        : str(user_id),
             "is_cold"        : True,
             "review_count"   : 0,
-            "mean_stars"     : 3.63,
+            "mean_stars"     : COLD_MEAN_STARS,
             "std_stars"      : 1.2,
             "rating_bias"    : "neutral",
             "pct_5_star"     : 0.462,
             "pct_1_star"     : 0.153,
-            "mean_word_count": 104.8,
+            "mean_word_count": COLD_MEAN_WC,
             "style_label"    : "medium",
-            "sample_reviews" : [],
             "top_categories" : [],
+            "sample_reviews" : [],
             "nigerian_mode"  : False,
         }
 
-
-def _build_inverted_index(user_ids: np.ndarray) -> dict:
-    n = len(user_ids)
-    perm = np.argsort(user_ids, kind="stable")
-    sorted_uids = user_ids[perm]
-    change_points = np.concatenate(
-        ([0], np.where(sorted_uids[1:] != sorted_uids[:-1])[0] + 1, [n])
-    )
-    out = {}
-    for i in range(len(change_points) - 1):
-        start, end = change_points[i], change_points[i + 1]
-        uid = sorted_uids[start]
-        out[uid] = perm[start:end]
-    return out
+    @property
+    def warm_user_count(self) -> int:
+        return len(self._store)
 
 
-def _style_label(mean_wc: float) -> str:
-    if mean_wc < 50:  return "concise"
-    if mean_wc > 150: return "verbose"
-    return "medium"
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _safe_float(val, default: float) -> float:
+def _safe_json_list(val) -> list:
+    if isinstance(val, list):
+        return val
+    if not isinstance(val, str) or not val:
+        return []
     try:
-        v = float(val)
-        return default if pd.isna(v) else v
-    except (TypeError, ValueError):
-        return default
+        parsed = json.loads(val)
+        return parsed if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []

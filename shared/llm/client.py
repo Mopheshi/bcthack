@@ -1,33 +1,45 @@
 """
-shared/llm/client.py  (v2 — google-genai SDK)
-----------------------------------------------
+shared/llm/client.py  (v3 — Gemini 3.x thinking control + retries)
+-------------------------------------------------------------------
 Unified LLM client. Set LLM_PROVIDER in .env to switch.
 
-Supported:
-  LLM_PROVIDER=gemini      → google-genai (new SDK, replaces google-generativeai)
-  LLM_PROVIDER=anthropic   → Anthropic Claude
-  LLM_PROVIDER=openai      → OpenAI
+WHAT'S NEW IN v3
+  - thinking_level support for Gemini 3.x models. Gemini 3 replaced the
+    old thinking_budget integer with a thinking_level string
+    (minimal|low|medium|high). For low-latency structured tasks we want
+    'minimal'. This is set via .env: LLM_THINKING_LEVEL=minimal
+  - Backward compatible: if the model is a 2.5 model, thinking_budget=0
+    is used instead (the old mechanism).
+  - Bounded retry with backoff on transient API errors (503/timeout).
+  - max_output_tokens is actually passed through now.
 
-Two methods on every client:
-  complete(system, user, max_tokens)          → str
-  complete_json(system, user, max_tokens)     → str  (enforced JSON output)
+Supported:
+  LLM_PROVIDER=gemini      -> google-genai
+  LLM_PROVIDER=anthropic   -> Anthropic Claude
+  LLM_PROVIDER=openai      -> OpenAI
+
+Methods on every client:
+  complete(system, user, max_tokens)        -> str
+  complete_json(system, user, max_tokens)   -> str  (JSON-enforced)
 """
 
 import os
-import logging
-import json
 import re
+import time
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
 log = logging.getLogger(__name__)
 
-PROVIDER   = os.getenv("LLM_PROVIDER",  "gemini").lower()
-MODEL      = os.getenv("LLM_MODEL",     "gemini-2.5-flash")
-MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "1000"))
+PROVIDER       = os.getenv("LLM_PROVIDER", "gemini").lower()
+MODEL          = os.getenv("LLM_MODEL", "gemini-3.1-flash-lite")
+MAX_TOKENS     = int(os.getenv("LLM_MAX_TOKENS", "1000"))
+THINKING_LEVEL = os.getenv("LLM_THINKING_LEVEL", "minimal").lower()
+MAX_RETRIES    = int(os.getenv("LLM_MAX_RETRIES", "2"))
 
 
-# ── Gemini (google-genai SDK) ─────────────────────────────────────────────────
+# ── Gemini (google-genai SDK) ────────────────────────────────────────────────
 
 class GeminiClient:
     def __init__(self):
@@ -41,69 +53,97 @@ class GeminiClient:
         if not api_key:
             raise ValueError("GOOGLE_API_KEY not set in .env")
 
-        self._genai       = genai
-        self._types       = genai_types
-        self._client      = genai.Client(api_key=api_key)
-        self._model       = os.getenv("LLM_MODEL", "gemini-2.5-flash")
-        log.info(f"GeminiClient initialised — model: {self._model}")
+        self._types  = genai_types
+        self._client = genai.Client(api_key=api_key)
+        self._model  = MODEL
+        self._is_gemini3 = self._model.startswith("gemini-3")
+        log.info(f"GeminiClient initialised — model: {self._model}, "
+                 f"thinking: {THINKING_LEVEL if self._is_gemini3 else 'budget=0'}")
+
+    def _thinking_config(self):
+        """
+        Gemini 3.x uses thinking_level (minimal|low|medium|high).
+        Gemini 2.5 uses thinking_budget (integer; 0 disables).
+        Returns the right ThinkingConfig for the active model, or None.
+        """
+        try:
+            if self._is_gemini3:
+                return self._types.ThinkingConfig(thinking_level=THINKING_LEVEL)
+            else:
+                return self._types.ThinkingConfig(thinking_budget=0)
+        except Exception as e:
+            # If the SDK version doesn't support the field, skip it gracefully.
+            log.debug(f"ThinkingConfig unavailable: {e}")
+            return None
+
+    def _safety(self):
+        return [
+            self._types.SafetySetting(category=c, threshold="BLOCK_NONE")
+            for c in ("HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+                      "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")
+        ]
+
+    def _generate(self, system, user, config):
+        """Single call with bounded retry on transient errors."""
+        last_err = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                return self._client.models.generate_content(
+                    model=self._model, contents=user, config=config,
+                )
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                transient = any(s in msg for s in
+                                ("503", "500", "unavailable", "timeout", "deadline", "overloaded"))
+                if transient and attempt < MAX_RETRIES:
+                    wait = 1.5 * (attempt + 1)
+                    log.warning(f"Gemini transient error (attempt {attempt+1}): {e} — retrying in {wait:.1f}s")
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_err
 
     def complete(self, system: str, user: str, max_tokens: int = MAX_TOKENS) -> str:
-        """Standard text completion."""
-        # Gemini takes system via system_instruction, user via contents
-        config = self._types.GenerateContentConfig(
-            system_instruction=system if system else None,
+        cfg_kwargs = dict(
+            system_instruction=system or None,
             temperature=0.7,
-            # Add safety settings to avoid it returning None on slightly sensitive text
-            safety_settings=[
-                self._types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
-                self._types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
-                self._types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
-                self._types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
-            ]
+            max_output_tokens=max_tokens,
+            safety_settings=self._safety(),
         )
-        log.info(f"Gemini complete() max_tokens: {max_tokens}")
-        response = self._client.models.generate_content(
-            model    = self._model,
-            contents = user,
-            config   = config,
-        )
-        # If response is blocked, return empty string instead of None
-        if getattr(response, "candidates", None) and response.candidates[0].finish_reason:
-             log.info(f"Finish reason: {response.candidates[0].finish_reason}")
-             log.info(f"Raw text length: {len(response.text) if response.text else 0}")
-        if not response.candidates:
-             return ""
-        text = response.text or ""
-        return text.strip()
+        tc = self._thinking_config()
+        if tc is not None:
+            cfg_kwargs["thinking_config"] = tc
+
+        config   = self._types.GenerateContentConfig(**cfg_kwargs)
+        response = self._generate(system, user, config)
+
+        if not getattr(response, "candidates", None):
+            log.warning("Gemini returned no candidates")
+            return ""
+        return (response.text or "").strip()
 
     def complete_json(self, system: str, user: str, max_tokens: int = MAX_TOKENS) -> str:
-        """
-        JSON-enforced completion using Gemini's native structured output.
-        Guarantees the response is valid JSON — no regex parsing needed.
-        """
-        config = self._types.GenerateContentConfig(
-            system_instruction  = system if system else None,
-            temperature         = 0.2,          # lower temp for deterministic JSON
-            response_mime_type  = "application/json",
-            safety_settings=[
-                self._types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
-                self._types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
-                self._types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
-                self._types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
-            ]
+        cfg_kwargs = dict(
+            system_instruction=system or None,
+            temperature=0.2,
+            max_output_tokens=max_tokens,
+            response_mime_type="application/json",
+            safety_settings=self._safety(),
         )
-        response = self._client.models.generate_content(
-            model    = self._model,
-            contents = user,
-            config   = config,
-        )
-        if not response.candidates:
-             return "{}"
-        text = response.text or "{}"
-        return _extract_json(text.strip())
+        tc = self._thinking_config()
+        if tc is not None:
+            cfg_kwargs["thinking_config"] = tc
+
+        config   = self._types.GenerateContentConfig(**cfg_kwargs)
+        response = self._generate(system, user, config)
+
+        if not getattr(response, "candidates", None):
+            return "{}"
+        return _extract_json((response.text or "{}").strip())
 
 
-# ── Anthropic ─────────────────────────────────────────────────────────────────
+# ── Anthropic ────────────────────────────────────────────────────────────────
 
 class AnthropicClient:
     def __init__(self):
@@ -126,12 +166,11 @@ class AnthropicClient:
         return r.content[0].text.strip()
 
     def complete_json(self, system: str, user: str, max_tokens: int = MAX_TOKENS) -> str:
-        # Anthropic: append JSON instruction to system prompt
-        json_system = system + "\n\nYou MUST respond with valid JSON only. No markdown, no preamble."
+        json_system = system + "\n\nRespond with valid JSON only. No markdown, no preamble."
         return _extract_json(self.complete(json_system, user, max_tokens))
 
 
-# ── OpenAI ────────────────────────────────────────────────────────────────────
+# ── OpenAI ───────────────────────────────────────────────────────────────────
 
 class OpenAIClient:
     def __init__(self):
@@ -164,13 +203,13 @@ class OpenAIClient:
         return _extract_json(r.choices[0].message.content.strip())
 
 
-# ── Factory + singleton ────────────────────────────────────────────────────────
+# ── Factory + singleton ──────────────────────────────────────────────────────
 
 _PROVIDERS = {"gemini": GeminiClient, "anthropic": AnthropicClient, "openai": OpenAIClient}
-
 _client = None
 
-def llm() -> GeminiClient:
+
+def llm():
     global _client
     if _client is None:
         if PROVIDER not in _PROVIDERS:
@@ -178,14 +217,14 @@ def llm() -> GeminiClient:
         _client = _PROVIDERS[PROVIDER]()
     return _client
 
+
 def _extract_json(text: str) -> str:
-    """Helper to strip Markdown formatting if any model returns ```json ... ```"""
+    """Strip markdown fences and locate the first JSON object/array."""
     text = text.strip()
     match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
     if match:
         text = match.group(1)
-    # Also find first { or [ just in case
-    start = text.find('{')
+    start     = text.find('{')
     start_arr = text.find('[')
     if start == -1 and start_arr == -1:
         return text

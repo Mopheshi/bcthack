@@ -1,27 +1,35 @@
 // js/api.js
-// Typed API wrappers with timeouts and proper error propagation.
+// Typed API wrappers — single consolidated origin.
 
-import { API_A, API_B, HEALTH_TIMEOUT_MS, METADATA_TIMEOUT_MS } from './config.js';
+import {
+  API_BASE, EP_HEALTH, EP_METADATA, EP_SIMULATE, EP_RECOMMEND,
+  HEALTH_TIMEOUT_MS, METADATA_TIMEOUT_MS,
+} from './config.js';
 import { fetchWithTimeout, postJson } from './utils.js';
 
+const url = (path) => `${API_BASE}${path}`;
+
+/**
+ * Health check. The consolidated service is a single origin, so there is
+ * one health state. We still return {okA, okB} so existing UI code that
+ * tracks two dots keeps working — both reflect the same service.
+ */
 export async function healthCheck() {
-  let okA = false, okB = false;
+  let ok = false;
   try {
-    const r = await fetchWithTimeout(`${API_A}/health`, {}, HEALTH_TIMEOUT_MS);
-    okA = r.ok;
+    const r = await fetchWithTimeout(url(EP_HEALTH), {}, HEALTH_TIMEOUT_MS);
+    if (r.ok) {
+      const body = await r.json().catch(() => ({}));
+      ok = body.ready === true || body.status === 'ok';
+    }
   } catch (_) { /* offline */ }
-  try {
-    const r = await fetchWithTimeout(`${API_B}/health`, {}, HEALTH_TIMEOUT_MS);
-    okB = r.ok;
-  } catch (_) { /* offline */ }
-  return { okA, okB };
+  return { okA: ok, okB: ok, ok };
 }
 
-export async function fetchMetadata({ okA, okB }) {
-  if (!okA && !okB) return null;
+export async function fetchMetadata(health) {
+  if (!health || !(health.ok ?? (health.okA && health.okB))) return null;
   try {
-    const url = `${okA ? API_A : API_B}/metadata`;
-    const r = await fetchWithTimeout(url, {}, METADATA_TIMEOUT_MS);
+    const r = await fetchWithTimeout(url(EP_METADATA), {}, METADATA_TIMEOUT_MS);
     if (!r.ok) return null;
     return await r.json();
   } catch (_) {
@@ -30,9 +38,9 @@ export async function fetchMetadata({ okA, okB }) {
 }
 
 export async function simulateReview(payload) {
-  return postJson(`${API_A}/simulate-review`, payload);
+  return postJson(url(EP_SIMULATE), payload);
 }
 
 export async function recommend(payload) {
-  return postJson(`${API_B}/recommend`, payload);
+  return postJson(url(EP_RECOMMEND), payload);
 }

@@ -11,7 +11,7 @@
 // 3. Latency display in the toolbar shows last task's response time
 //    so the demo audience can see the system is fast.
 
-import { API_A, API_B } from './config.js';
+import { API_BASE } from './config.js';
 import { $ } from './utils.js';
 import * as dd from './dropdown.js';
 import * as api from './api.js';
@@ -446,7 +446,7 @@ async function runSimulate() {
     updateLatencyMeta('A', latency);
   } catch (e) {
     stopSkeletonAnimations();
-    renderError(e, result, API_A);
+    renderError(e, result, API_BASE);
   } finally {
     setButtonLoading(btn, false, '▶ SIMULATE REVIEW');
   }
@@ -478,7 +478,7 @@ async function runRecommend() {
     updateLatencyMeta('B', latency);
   } catch (e) {
     stopSkeletonAnimations();
-    renderError(e, result, API_B);
+    renderError(e, result, API_BASE);
   } finally {
     setButtonLoading(btn, false, '▶ GET RECOMMENDATIONS');
   }

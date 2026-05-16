@@ -1,0 +1,15 @@
+# PersonaRAG — consolidated service requirements
+fastapi==0.136.1
+uvicorn[standard]==0.47.0
+pydantic==2.13.4
+python-dotenv==1.2.2
+google-genai>=2.2.0
+chromadb==1.5.9
+sentence-transformers==5.5.0
+numpy>=2.4.5
+pandas>=3.0.3
+pyarrow>=24.0.0
+bert-score==0.3.13
+# Optional alternative providers — uncomment if you switch LLM_PROVIDER
+# anthropic==0.101.0
+# openai==2.36.0
