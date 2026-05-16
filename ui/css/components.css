@@ -101,6 +101,17 @@
 .result-area {
   margin-top: 0;
   min-height: 200px;
+  max-height: 540px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.result-area::-webkit-scrollbar { width: 6px; }
+.result-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
 }
 
 .result-empty {
