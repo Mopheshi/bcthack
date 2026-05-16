@@ -6,10 +6,10 @@
 // your deployed domain. Leave API_BASE empty ('') to use a same-origin
 // relative path — correct when the UI is served by the same host as the API.
 
-// Local development default. For production, set this to your deployed
-// API origin (e.g. 'https://bcthack.vancus.app') or leave '' if the UI
-// is served from the same origin as the API.
-export const API_BASE = 'http://localhost:8080';
+// '' = same-origin (production via Firebase Hosting, which proxies /api/**
+// to Cloud Run). Override to 'http://localhost:8080' for local dev without
+// the Firebase emulator.
+export const API_BASE = '';
 
 // Endpoint paths on the consolidated service.
 export const EP_HEALTH    = '/health';

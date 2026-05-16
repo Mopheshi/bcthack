@@ -1,0 +1,42 @@
+# This file overrides .gitignore for `gcloud builds submit`.
+# It must explicitly allow data/processed/ so it reaches the Docker build context.
+.gcloudignore
+.git/
+.gitignore
+
+# Environment
+.env
+*.env
+
+# Raw Yelp data — never include (~5 GB)
+data/raw/
+
+# Build-only processed files — excluded to keep the upload small (save ~2.7 GB)
+data/processed/reviews.parquet
+data/processed/users.parquet
+
+# Runtime files (persona_store.parquet, chroma/, ui_metadata.json) are intentionally NOT excluded.
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
+
+# Deployment script
+deploy-cloudrun.ps1
+
+# Local dev noise
+*.log
+out.log
+firebase-debug.log

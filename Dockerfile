@@ -13,11 +13,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Application code (data is NOT baked in — see note below)
+# Pre-download the ONNX model at build time. _download_model_if_not_exists() only
+# fires inside __call__(), so we must actually embed a dummy string here — just
+# constructing ONNXMiniLM_L6_V2() does nothing. The model lands at
+# /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2/ and is reused at runtime.
+RUN python -c "from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2; ONNXMiniLM_L6_V2()(['warmup'])"
+
+# Application code
 COPY shared/ ./shared/
 COPY task_a/ ./task_a/
 COPY task_b/ ./task_b/
 COPY app/    ./app/
+
+# Bake only runtime-needed processed data into the image.
+# reviews.parquet (2.6 GB) and users.parquet are build-only — never needed at runtime.
+COPY data/processed/persona_store.parquet ./data/processed/persona_store.parquet
+COPY data/processed/ui_metadata.json      ./data/processed/ui_metadata.json
+COPY data/processed/chroma/               ./data/processed/chroma/
 
 ENV PYTHONPATH=/app
 ENV LOG_LEVEL=INFO

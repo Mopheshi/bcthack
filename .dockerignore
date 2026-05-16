@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Raw Yelp dataset — must NEVER enter the image (~5 GB)
+data/raw/
+
+# Build-only processed files — not needed at runtime
+data/processed/reviews.parquet
+data/processed/users.parquet
+
+# Local dev noise
+.env
+*.log
+out.log
+.git/
+.idea/
+*.zip
+ui/

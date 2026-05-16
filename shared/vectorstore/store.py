@@ -13,15 +13,14 @@ import logging
 from typing import Optional
 
 import chromadb
-from chromadb.utils import embedding_functions
+from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 from dotenv import load_dotenv
 
 load_dotenv()
 log = logging.getLogger(__name__)
 
-CHROMA_DIR  = os.getenv("CHROMA_DIR",   "./data/processed/chroma")
-EMBED_MODEL = os.getenv("EMBED_MODEL",  "all-MiniLM-L6-v2")
-COLLECTION  = "yelp_businesses"
+CHROMA_DIR = os.getenv("CHROMA_DIR", "./data/processed/chroma")
+COLLECTION = "yelp_businesses"
 
 
 class VectorStore:
@@ -29,13 +28,13 @@ class VectorStore:
 
     def __init__(self):
         self._client = chromadb.PersistentClient(path=CHROMA_DIR)
-        self._embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=EMBED_MODEL
-        )
-        self._col = self._client.get_collection(
-            name=COLLECTION,
-            embedding_function=self._embed_fn,
-        )
+        # ONNXMiniLM_L6_V2 uses onnxruntime instead of PyTorch — same model weights,
+        # ~400 MB lighter. We embed queries manually and pass query_embeddings to
+        # collection.query() so we never hit the name-mismatch conflict check that
+        # chromadb raises when the persisted EF name (sentence_transformers) differs
+        # from the new EF name (onnx_mini_lm_l6_v2).
+        self._embed_fn = ONNXMiniLM_L6_V2()
+        self._col = self._client.get_collection(name=COLLECTION)
         log.info(f"VectorStore ready — {self._col.count():,} businesses in '{COLLECTION}'")
 
     def query_businesses(
@@ -48,8 +47,9 @@ class VectorStore:
         Semantic search: returns n businesses most similar to query text.
         Each result: {business_id, name, categories, city, state, stars, review_count, distance}
         """
+        embeddings = self._embed_fn([query])
         kwargs = dict(
-            query_texts=[query],
+            query_embeddings=embeddings,
             n_results=min(n, self._col.count()),
             include=["metadatas", "distances", "documents"],
         )

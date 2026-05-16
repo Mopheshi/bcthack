@@ -1,0 +1,22 @@
+{
+  "hosting": {
+    "site": "bcthack",
+    "public": "ui",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "cleanUrls": true,
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": { "serviceId": "bcthack-api", "region": "us-central1" }
+      },
+      {
+        "source": "/health",
+        "run": { "serviceId": "bcthack-api", "region": "us-central1" }
+      },
+      {
+        "source": "/metadata",
+        "run": { "serviceId": "bcthack-api", "region": "us-central1" }
+      }
+    ]
+  }
+}

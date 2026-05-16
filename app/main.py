@@ -26,6 +26,7 @@ Run locally:
 import json
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -43,10 +44,11 @@ log = logging.getLogger(__name__)
 
 PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "./data/processed"))
 
-# Shared singletons — built once at startup
+# Singletons populated by the background init thread after uvicorn starts.
 _simulator: Optional[ReviewSimulator]    = None
 _agent:     Optional[RecommendationAgent] = None
 _metadata:  Optional[dict]                = None
+_init_error: Optional[str]               = None
 
 
 def _load_metadata() -> dict:
@@ -59,19 +61,31 @@ def _load_metadata() -> dict:
         return json.load(f)
 
 
+def _background_init():
+    """Heavy startup work runs in a thread so uvicorn binds port 8080 immediately.
+    Cloud Run's HTTP startup probe can then reach /healthz/startup right away."""
+    global _simulator, _agent, _metadata, _init_error
+    try:
+        log.info("=== PersonaRAG init starting (background) ===")
+        sim   = ReviewSimulator()
+        agent = RecommendationAgent(persona_builder=sim.persona_builder)
+        meta  = _load_metadata()
+        # Assign atomically so /health never sees a partial state
+        _simulator = sim
+        _agent     = agent
+        _metadata  = meta
+        log.info("=== PersonaRAG ready ===")
+    except Exception as exc:
+        _init_error = str(exc)
+        log.exception("Background init failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _simulator, _agent, _metadata
-    log.info("=== PersonaRAG starting ===")
-
-    # ReviewSimulator builds a PersonaBuilder. RecommendationAgent needs
-    # a PersonaBuilder too — we reuse the SAME instance so the persona
-    # store is loaded into memory exactly once.
-    _simulator = ReviewSimulator()
-    _agent     = RecommendationAgent(persona_builder=_simulator.persona_builder)
-    _metadata  = _load_metadata()
-
-    log.info("=== PersonaRAG ready ===")
+    # Kick off heavy init in a daemon thread and yield immediately so uvicorn
+    # starts serving HTTP before data is loaded.  /healthz/startup returns 503
+    # until _simulator and _agent are set, then switches to 200.
+    threading.Thread(target=_background_init, daemon=True).start()
     yield
     log.info("=== PersonaRAG shutting down ===")
 
@@ -140,6 +154,17 @@ class RecommendResponse(BaseModel):
 
 
 # ── System endpoints ─────────────────────────────────────────────────────────
+
+@app.get("/healthz/startup", tags=["System"], include_in_schema=False)
+def startup_probe():
+    """Cloud Run startup probe target. Returns 503 while background init runs,
+    200 once both singletons are set. Keeps the HTTP probe from timing out."""
+    if _init_error:
+        raise HTTPException(500, f"Init failed: {_init_error}")
+    if _simulator is None or _agent is None:
+        raise HTTPException(503, "Initialising — not ready yet")
+    return {"status": "ready"}
+
 
 @app.get("/health", tags=["System"])
 def health():
