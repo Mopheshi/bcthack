@@ -345,7 +345,7 @@ injected at deploy time, never baked into the image.
 
 ## License
 
-MIT. The Yelp dataset is subject to its own [license terms](https://www.yelp.com/dataset/download).
+[MIT](LICENSE). The Yelp dataset is subject to its own [license terms](https://www.yelp.com/dataset/download).
 
 ## Citation
 
