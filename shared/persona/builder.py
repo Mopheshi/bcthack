@@ -1,12 +1,10 @@
 """
-shared/persona/builder.py  (v6 — precomputed persona store)
-------------------------------------------------------------
 ARCHITECTURE CHANGE — this is the fix for every startup/RAM problem.
 
 OLD (v5 and earlier):
   Loaded all 5.78M rows of reviews.parquet into RAM at startup, built an
   inverted index live, composed personas per request. Result: 90s+ boots,
-  Docker healthcheck restart loops, ~3.5 GB RAM per container, two
+  Docker health check restart loops, ~3.5 GB RAM per container, two
   containers impossible on a 16 GB laptop.
 
 NEW (v6):

@@ -1,19 +1,19 @@
 """
-scripts/evaluate.py  (v2)
---------------------------
 Evaluation with TWO protocols:
 
-Protocol 1 — Open retrieval (strict):
-  System retrieves from ALL 150K businesses.
-  Realistic for deployment; harsh on NDCG/Hit Rate.
+Protocol 1 -- Open retrieval (strict):
+  The agent retrieves from ALL 150K businesses via its own pipeline.
+  Realistic for deployment; harsh on NDCG / Hit Rate.
   Reported as "Open" in the paper.
 
-Protocol 2 — Candidate-set retrieval (standard):
-  For each test user, we first retrieve the top-100 semantically
-  similar businesses using the vector store. The ground-truth item
-  is injected into this set if not already present (ensuring fair
-  evaluation). System then reranks within the 100-item candidate set.
-  This matches standard recommendation evaluation practice [Hou et al., 2025].
+Protocol 2 -- Candidate-set retrieval (standard):
+  For each test user, the top-100 semantically similar businesses are
+  retrieved up front. The ground-truth item is injected into this pool
+  if not already present, so recall is possible. The agent then reranks
+  WITHIN that fixed 100-item pool via RecommendationAgent.rerank_candidates().
+  This is the standard recommendation evaluation protocol and, unlike v2,
+  the agent genuinely ranks within the candidate set rather than running
+  its own open retrieval.
   Reported as "Candidate-100" in the paper.
 
 Task A metrics: RMSE, ROUGE-L, BERTScore F1
@@ -21,7 +21,7 @@ Task B metrics: NDCG@10, Hit Rate@10
 
 Usage:
     python -m scripts.evaluate --task both --n 200
-    python -m scripts.evaluate --task b --n 200 --protocol both
+    python -m scripts.evaluate --task b --n 200 --protocol candidate
 """
 
 import os, sys, json, logging, argparse, math, random
@@ -38,8 +38,10 @@ log = logging.getLogger(__name__)
 PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "./data/processed"))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+CANDIDATE_POOL_SIZE = 100   # candidate-100 protocol
 
-# ── Test set ──────────────────────────────────────────────────────────────────
+
+# -- Test set ------------------------------------------------------------------
 
 def build_test_set(n=200, min_reviews=10, seed=42):
     log.info(f"Building test set (n={n}, min_reviews={min_reviews}) ...")
@@ -57,7 +59,7 @@ def build_test_set(n=200, min_reviews=10, seed=42):
     return test
 
 
-# ── Task A ────────────────────────────────────────────────────────────────────
+# -- Task A --------------------------------------------------------------------
 
 def evaluate_task_a(test_df):
     from task_a.simulator import ReviewSimulator
@@ -95,9 +97,10 @@ def evaluate_task_a(test_df):
             "systematic_bias": round(float(bias),3)}
 
 
-# ── Task B ────────────────────────────────────────────────────────────────────
+# -- Task B --------------------------------------------------------------------
 
 def evaluate_task_b(test_df, k=10, protocol="both"):
+    import asyncio
     from task_b.recommender import RecommendationAgent
     from shared.vectorstore.store import VectorStore
 
@@ -113,39 +116,48 @@ def evaluate_task_b(test_df, k=10, protocol="both"):
         context  = f"Looking for {row.get('categories','a good place')}"
         user_id  = row["user_id"]
 
-        # ── Protocol 1: Open retrieval ────────────────────────
+        # -- Protocol 1: Open retrieval --------------------
         if protocol in ("open","both"):
             try:
-                result  = agent.recommend(user_id=user_id, context=context, top_k=k)
+                result  = asyncio.run(
+                    agent.recommend(user_id=user_id, context=context, top_k=k)
+                )
                 rec_ids = [r["business_id"] for r in result["recommendations"]]
                 open_ndcg.append(_ndcg_at_k(gt_biz, rec_ids, k))
                 open_hit.append(1.0 if gt_biz in rec_ids else 0.0)
             except Exception as e:
                 log.warning(f"Open eval failed {user_id}: {e}")
 
-        # ── Protocol 2: Candidate-100 retrieval ───────────────
+        # -- Protocol 2: Candidate-100 retrieval -----------
+        # Genuine candidate-set protocol: build a fixed 100-item pool,
+        # inject the ground truth, and have the agent rerank WITHIN it.
         if protocol in ("candidate","both"):
             try:
-                # Retrieve 99 candidates semantically, then inject ground truth
-                candidates = vs.query_businesses(query=context, n=99)
-                cand_ids   = [c["business_id"] for c in candidates]
-                if gt_biz not in cand_ids:
-                    cand_ids.append(gt_biz)   # inject so recall is possible
+                pool = vs.query_businesses(query=context, n=CANDIDATE_POOL_SIZE)
+                pool_ids = {c["business_id"] for c in pool}
 
-                # Ask agent to rerank within this candidate set
-                # We simulate by scoring each candidate via the agent's reranker
-                result2    = agent.recommend(user_id=user_id, context=context, top_k=k)
-                # Filter result to candidate set
-                rec_ids2   = [r["business_id"] for r in result2["recommendations"]
-                              if r["business_id"] in set(cand_ids)]
-                # Pad with top candidates if needed
-                for cid in cand_ids:
-                    if len(rec_ids2) >= k: break
-                    if cid not in rec_ids2:
-                        rec_ids2.append(cid)
+                # Inject the ground-truth business if retrieval missed it,
+                # so that a correct ranking is achievable.
+                if gt_biz not in pool_ids:
+                    gt_meta = vs.get_business(gt_biz)
+                    if gt_meta is not None:
+                        pool.append(gt_meta)
+                    else:
+                        # Ground truth not in the index at all -- skip this
+                        # user rather than score an impossible case.
+                        log.warning(f"GT {gt_biz} absent from index; skipping cand eval")
+                        raise KeyError("gt-not-in-index")
 
-                cand_ndcg.append(_ndcg_at_k(gt_biz, rec_ids2[:k], k))
+                # Agent reranks within exactly this pool.
+                result2  = agent.rerank_candidates(
+                    user_id=user_id, context=context, candidates=pool, top_k=k,
+                )
+                rec_ids2 = [r["business_id"] for r in result2["recommendations"]]
+
+                cand_ndcg.append(_ndcg_at_k(gt_biz, rec_ids2, k))
                 cand_hit.append(1.0 if gt_biz in rec_ids2[:k] else 0.0)
+            except KeyError:
+                pass   # skipped -- ground truth not indexable
             except Exception as e:
                 log.warning(f"Candidate eval failed {user_id}: {e}")
 
@@ -155,19 +167,20 @@ def evaluate_task_b(test_df, k=10, protocol="both"):
             "n_evaluated"  : len(open_ndcg),
             f"ndcg@{k}"    : round(float(np.mean(open_ndcg)),4),
             f"hit_rate@{k}": round(float(np.mean(open_hit)),4),
-            "note"         : "Retrieval from full 150K business corpus"
+            "note"         : "Agent retrieves from the full 150K business corpus"
         }
     if cand_ndcg:
         out["candidate_100"] = {
             "n_evaluated"  : len(cand_ndcg),
             f"ndcg@{k}"    : round(float(np.mean(cand_ndcg)),4),
             f"hit_rate@{k}": round(float(np.mean(cand_hit)),4),
-            "note"         : "Reranking within top-100 candidate set (standard protocol)"
+            "note"         : f"Agent reranks within a fixed {CANDIDATE_POOL_SIZE}-item "
+                             "candidate pool (ground truth injected)"
         }
     return out
 
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
+# -- Metrics -------------------------------------------------------------------
 
 def _ndcg_at_k(relevant_id, ranked_ids, k):
     for i, bid in enumerate(ranked_ids[:k]):
@@ -211,7 +224,7 @@ def _bertscore_batch(refs, hyps):
         return float(np.mean(scores))
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()

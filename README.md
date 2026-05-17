@@ -2,39 +2,49 @@
 
 **An Agentic LLM Framework for Behavioural User Modelling and Contextual Recommendation**
 
-Built for the DSN × BCT LLM Agent Challenge 2026. PersonaRAG is a two-task agentic system over the Yelp Open Dataset:
+Built for the DSN × BCT LLM Agent Challenge 2026. PersonaRAG is a two-task agentic system over the Yelp Open Dataset, deployed as a live web service.
 
 - **Task A — Review Simulator.** Given a user ID and a target business, predicts the star rating and generates a Yelp review faithful to that user's tone, rating bias, and writing style.
 - **Task B — Recommendation Agent.** Three-stage agentic pipeline (intent reasoning → semantic retrieval over 150K businesses → LLM reranking) that handles warm users, cold-start users, cross-domain transfer, and multi-turn conversations.
 
 Both tasks share a Nigerian Cultural Adapter that injects authentic Nigerian English and Naija Pidgin into outputs when Nigerian signals are detected.
 
+**Live application:** https://bcthack.vancus.app
+**API endpoint:** https://bcthack.vancus.app/api
+**Source code:** https://github.com/Mopheshi/bcthack
+
 ---
 
 ## Architecture
 
+PersonaRAG runs as a **single consolidated FastAPI service**. Task A and Task B share one PersonaBuilder and one vector index, so each is loaded into memory exactly once.
+
 ```
-                      ┌─────────────────┐
-   User ID + Context ─┤  PersonaBuilder ├── ChromaDB (150K businesses)
-                      └────────┬────────┘           │
-                               │                    │
-                ┌──────────────┴──────────────┐    │
-                │                             │    │
-            Task A pipeline             Task B pipeline
-            ├ Rating Predictor          ├ Intent Reasoner (LLM)
-            ├ RAG Context selector      ├ Dense Retrieval ◄──┘
-            └ Review Generation (LLM)   └ LLM Reranking
-                               │
-                               ▼
-              Nigerian Cultural Adapter (prompt-level)
-                               │
-                               ▼
-                Review + Rating  /  Ranked Recommendations
+                       ┌─────────────────┐
+   User ID + Context ──┤  PersonaBuilder ├── Persona Store (precomputed)
+                       └────────┬────────┘
+                                │
+                 ┌──────────────┴──────────────┐
+                 │                             │
+             Task A pipeline             Task B pipeline
+             ├ Rating Predictor          ├ Intent Reasoner (LLM)
+             ├ RAG Context selector      ├ Dense Retrieval ──► ChromaDB
+             └ Review Generation (LLM)   └ LLM Reranking        (150K biz)
+                                │
+                                ▼
+               Nigerian Cultural Adapter (prompt-level)
+                                │
+                                ▼
+                 Review + Rating  /  Ranked Recommendations
 ```
+
+A key architectural principle is the **separation of build time from runtime**. The raw Yelp corpus and intermediate tables are processed once, offline, into two compact artefacts — a precomputed persona store and a ChromaDB business index. The running service loads only those. It never touches the multi-gigabyte review corpus.
+
+---
 
 ## Final evaluation results
 
-Leave-one-out protocol on 200 held-out Yelp users:
+Leave-one-out protocol on 200 held-out Yelp users.
 
 ### Task A (n=199)
 
@@ -51,9 +61,10 @@ Leave-one-out protocol on 200 held-out Yelp users:
 | Protocol            | NDCG@10 ↑ | HR@10 ↑ |
 |---------------------|-----------|---------|
 | Open retrieval      | 0.042     | 0.050   |
-| Candidate-100       | 0.043     | 0.050   |
 
-Open retrieval ranks the ground-truth business against all 150,346 candidates; candidate-100 reranks within a pre-filtered set of 100. A random baseline over the full corpus yields NDCG@10 ≈ 0.001, so the system performs ~40× better than random.
+Open retrieval ranks the ground-truth business against all 150,346 candidates — the strictest possible protocol, corresponding directly to deployment behaviour. A random baseline over the full corpus yields NDCG@10 ≈ 0.001, so the system performs ~40× better than random.
+
+The evaluation harness also implements a **candidate-100** protocol (`--protocol candidate`), in which the agent reranks within a fixed 100-business pool with the ground truth injected. This isolates rerank quality from large-scale retrieval difficulty; because the pool is far smaller than the full corpus, candidate-100 scores would be expected to exceed the open-retrieval figures. A full candidate-100 run over the 200-user test set is left as a reproducible exercise — the protocol is in the harness but not run here, owing to the LLM API budget it requires.
 
 ---
 
@@ -62,40 +73,41 @@ Open retrieval ranks the ground-truth business against all 150,346 candidates; c
 ```
 .
 ├── data/                          # Not committed — Yelp parquet + ChromaDB index
-│   ├── raw/                       # Original Yelp JSON files
-│   └── processed/                 # users.parquet, reviews.parquet, chroma/, ui_metadata.json
+│   ├── raw/                       # Original Yelp JSON files (build-time only)
+│   └── processed/                 # persona_store.parquet, chroma/, ui_metadata.json
 │
 ├── scripts/
 │   ├── extract_data.py            # Raw Yelp JSON → parquet
 │   ├── yelp_eda.py                # EDA pipeline
 │   ├── build_index.py             # Build 150K-business ChromaDB index
-│   ├── build_ui_metadata.py       # Pre-compute dropdown data for UI
+│   ├── build_persona_store.py     # Precompute the persona store (build-time)
+│   ├── build_ui_metadata.py       # Pre-compute dropdown data for the UI
 │   ├── smoke_test.py              # End-to-end sanity check
 │   └── evaluate.py                # Run dual-protocol evaluation
 │
 ├── shared/
-│   ├── persona/builder.py         # In-memory user fingerprint extractor
+│   ├── persona/builder.py         # Loads the precomputed persona store
 │   ├── vectorstore/store.py       # ChromaDB wrapper
 │   ├── llm/client.py              # Gemini / Anthropic / OpenAI factory
 │   └── nigerian/adapter.py        # Cultural-prompt injection layer
 │
-├── task_a/                        # FastAPI service on port 8001
-│   ├── main.py
-│   ├── simulator.py               # Rating predictor + RAG review generation
-│   └── Dockerfile
+├── task_a/
+│   └── simulator.py               # Rating predictor + RAG review generation
 │
-├── task_b/                        # FastAPI service on port 8002
-│   ├── main.py
-│   ├── recommender.py             # Async 3-stage agentic pipeline
-│   └── Dockerfile
+├── task_b/
+│   └── recommender.py             # Async 3-stage agentic pipeline
+│
+├── app/
+│   └── main.py                    # Consolidated FastAPI service (both tasks)
 │
 ├── ui/                            # Single-page web client (vanilla JS, no build step)
 │   ├── index.html
-│   ├── css/                       # Modular CSS: base, dropdown, components, skeleton, animations
-│   └── js/                        # Modular ES6: config, utils, dropdown, api, renderers, skeletons, main
+│   ├── css/                       # Modular CSS
+│   └── js/                        # Modular ES6: config, utils, dropdown, api, renderers, main
 │
+├── Dockerfile                     # Single consolidated image
 ├── docker-compose.yml
-├── Makefile
+├── requirements.txt
 └── README.md
 ```
 
@@ -107,9 +119,8 @@ Open retrieval ranks the ground-truth business against all 150,346 candidates; c
 
 - Python 3.14+
 - Docker + Docker Compose
-- A Gemini API key (free tier works) or Anthropic/OpenAI key
+- A Gemini API key
 - ~10 GB free disk for the Yelp dataset and ChromaDB index
-- ~8 GB free RAM (4 GB per container at steady state)
 
 ### One-time setup
 
@@ -118,27 +129,43 @@ Open retrieval ranks the ground-truth business against all 150,346 candidates; c
 git clone https://github.com/Mopheshi/bcthack.git
 cd bcthack
 cp .env.example .env
-# Edit .env: set LLM_PROVIDER, GOOGLE_API_KEY (or other provider key)
+# Edit .env: set LLM_PROVIDER and GOOGLE_API_KEY (or another provider key)
 
-# 2. Download Yelp Open Dataset to data/raw/
+# 2. Download the Yelp Open Dataset into data/raw/
 #    https://www.yelp.com/dataset
 
-# 3. Build the data pipeline
-python -m scripts.extract_data           # ~3 min
-python -m scripts.build_index            # ~2 hours (150K embeddings)
-python -m scripts.build_ui_metadata      # ~30s
+# 3. Build the data pipeline (build-time, runs once)
+python -m scripts.extract_data           # ~3 min   — raw JSON → parquet
+python -m scripts.build_index            # ~2 hours — 150K business embeddings
+python -m scripts.build_persona_store    # ~2-4 min — precompute the persona store
+python -m scripts.build_ui_metadata      # ~30s     — UI dropdown data
 ```
 
-### Running the services
+Step 3 is the build-time stage. After it completes, the running service
+needs only `data/processed/persona_store.parquet`, `data/processed/chroma/`,
+and `data/processed/ui_metadata.json`.
+
+### Running locally
+
+The system is one service. Run it natively:
 
 ```bash
-docker compose up -d
-# Wait ~30 seconds for both containers to load persona data into memory
-# Then visit:
-#   Task A:  http://localhost:8001/docs
-#   Task B:  http://localhost:8002/docs
-#   UI:      open ui/index.html in your browser
+uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
+
+Or with Docker:
+
+```bash
+docker compose up
+```
+
+Then visit:
+- API docs: http://localhost:8080/docs
+- Health:   http://localhost:8080/health
+- UI:       open `ui/index.html`, or http://localhost:8081 under Docker
+
+Startup takes roughly 5–10 seconds — the service loads the persona store
+and ChromaDB index, nothing more.
 
 ### Smoke test
 
@@ -156,27 +183,28 @@ python -m scripts.evaluate --task both --n 200 --protocol both
 
 ## Performance characteristics
 
-Measured on a 16 GB consumer laptop (Intel i5, no GPU):
+Measured against the live Cloud Run deployment, warm instance:
 
-| Stage                              | Task A   | Task B    |
-|------------------------------------|----------|-----------|
-| Container startup (incl. data load)| 25-35s   | 25-35s    |
-| PersonaBuilder lookup (warm)       | <1ms     | <1ms      |
-| PersonaBuilder lookup (cold)       | <1ms     | <1ms      |
-| Vector retrieval                   | —        | ~50ms     |
-| LLM call(s)                        | 4-10s    | 8-20s     |
-| **End-to-end (warm user)**         | **5-12s**| **10-25s**|
-| **End-to-end (cold start)**        | **4-8s** | **8-18s** |
+| Stage                       | Task A           | Task B           |
+|-----------------------------|------------------|------------------|
+| Persona lookup              | O(1), <1 ms      | O(1), <1 ms      |
+| Rating prediction           | <1 ms            | —                |
+| Dense retrieval (ChromaDB)  | —                | tens of ms       |
+| LLM call(s)                 | 1 call           | 2 calls          |
+| **End-to-end (typical)**    | **1.4–2.1 s**    | **2.3–2.7 s**    |
 
-Task B is slower because it issues two sequential Gemini API calls (intent reasoning, then JSON reranking). Latency is dominated by network round-trip to the LLM provider, not local computation.
+Task B is slower because it issues two sequential LLM calls (intent
+reasoning, then JSON reranking) where Task A issues one. In both tasks the
+LLM round-trip dominates; local computation contributes a few milliseconds.
 
-### Memory footprint after warm-up
+### Runtime footprint
 
-- `users.parquet` (eager): ~150 MB
-- `reviews.parquet` + user-to-index map (eager): ~3.5 GB
-- ChromaDB index + SentenceTransformer model: ~600 MB
+The deployed container holds only the derived artefacts:
 
-**Total per container at steady state: ~4 GB.**
+- `persona_store.parquet` — ~84 MB, loaded into an in-memory dict
+- ChromaDB index + ONNX MiniLM-L6-v2 encoder — ~1.5 GB on disk
+
+The raw review corpus is never loaded at runtime.
 
 ---
 
@@ -186,13 +214,17 @@ Task B is slower because it issues two sequential Gemini API calls (intent reaso
 
 **Business-level vector index.** Indexing 5.7M reviews caused ChromaDB compaction failures at scale. Indexing 150K businesses with aggregated review snippets is architecturally correct for Task B (recommendations surface businesses) and completed reliably in ~2 hours.
 
-**In-memory persona cache.** The first iteration loaded review history from parquet on every request, with 30-60s latency. The production build loads `reviews.parquet` once at startup and builds a `user_id → row_indices` map using numpy argsort for ~10× faster index construction. Trades 3.5 GB of RAM for sub-millisecond lookups.
+**Build-time persona precomputation.** An earlier design built personas from the review corpus inside the request path, which forced the runtime to hold several gigabytes of review data in memory and made startup slow and fragile. The production build precomputes one fingerprint per warm user — including representative review snippets — into a compact persona store (~84 MB). Runtime persona lookup is an O(1) dict read; the raw corpus is never touched. This is the change that made serverless deployment practical.
 
-**Async-native Task B pipeline.** Intent reasoning and initial retrieval run in parallel via `asyncio.gather`, saving 5-10s on every warm-user request.
+**Consolidated single service.** Task A and Task B share the PersonaBuilder and vector index, so they run as one FastAPI application rather than two containers. One copy of the data in memory, one cold start, one origin.
 
-**Graceful fallbacks.** If intent reasoning fails → use raw context. If retrieval returns too few candidates → category fallback. If LLM reranking fails → vector-distance ranking with locally synthesised reasons. The system never returns empty recommendations.
+**ONNX embedding runtime.** The dense retriever uses all-MiniLM-L6-v2 via an ONNX-runtime implementation rather than the PyTorch-backed one. Identical 384-dimensional embeddings, fully compatible with the prebuilt index, without the PyTorch memory overhead.
 
-**Nigerian cultural layer.** A lexical scanner detects Nigerian Pidgin function words (na, abi, sha, wahala), cultural vocabulary (suya, jollof, mama put, egusi), and city names (Lagos, Abuja, 18 others). When triggered, it appends a cultural instruction block to the LLM system prompt, producing authentic outputs like *"Chai!"*, *"I no go lie"*, *"abeg"*, *"wahala"*.
+**Async-native Task B pipeline.** Intent reasoning and initial retrieval run in parallel via `asyncio.gather`, saving wall-clock time on every request.
+
+**Graceful fallbacks.** If intent reasoning fails → use raw context. If retrieval returns too few candidates → category fallback. If LLM reranking fails → vector-distance ranking with locally synthesised reasons. The LLM client also retries transient API errors with bounded backoff. The system never returns empty recommendations.
+
+**Nigerian cultural layer.** A lexical scanner detects Nigerian Pidgin function words (na, abi, sha, wahala), cultural vocabulary (suya, jollof, mama put, egusi), and city names (Lagos, Abuja, and 18 others). When triggered, it appends a cultural instruction block to the LLM system prompt, producing authentic outputs like *"Chai!"*, *"I no go lie"*, *"abeg"*, *"wahala"*.
 
 ---
 
@@ -200,28 +232,30 @@ Task B is slower because it issues two sequential Gemini API calls (intent reaso
 
 All knobs live in `.env`. Sensible defaults are provided; override as needed.
 
-| Variable                       | Default              | Purpose                                  |
-|--------------------------------|----------------------|------------------------------------------|
-| `LLM_PROVIDER`                 | `gemini`             | `gemini`, `anthropic`, or `openai`       |
-| `LLM_MODEL`                    | `gemini-2.5-flash`   | Model name for the chosen provider       |
-| `GOOGLE_API_KEY`               |                      | Required for Gemini                      |
-| `ANTHROPIC_API_KEY`            |                      | Required for Anthropic                   |
-| `OPENAI_API_KEY`               |                      | Required for OpenAI                      |
-| `EAGER_LOAD_REVIEWS`           | `true`               | Load reviews.parquet at startup          |
-| `MIN_REVIEWS_FOR_WARM_USER`    | `5`                  | Threshold for warm vs cold persona       |
-| `TOP_K_REVIEWS`                | `10`                 | Per-user history depth                   |
-| `MAX_RAG_REVIEWS`              | `3`                  | Sample reviews in Task A prompt          |
-| `RAG_SNIPPET_LEN`              | `150`                | Max chars per sample review snippet      |
-| `TOP_K_RETRIEVE`               | `15`                 | Candidates from vector store             |
-| `TOP_K_RETURN`                 | `10`                 | Final recommendations returned           |
-| `LLM_REVIEW_TOKENS`            | `600`                | Max tokens for Task A generation         |
-| `LLM_RERANK_TOKENS`            | `1500`               | Max tokens for Task B rerank JSON        |
+| Variable                       | Default                  | Purpose                                 |
+|--------------------------------|--------------------------|-----------------------------------------|
+| `LLM_PROVIDER`                 | `gemini`                 | `gemini`                                |
+| `LLM_MODEL`                    | `gemini-3.1-flash-lite`  | Model name for the chosen provider      |
+| `LLM_THINKING_LEVEL`           | `minimal`                | Reasoning level for Gemini 3.x models   |
+| `GOOGLE_API_KEY`               |                          | Required for Gemini                     |
+| `MIN_REVIEWS_FOR_WARM_USER`    | `5`                      | Threshold for warm vs cold persona      |
+| `PERSONA_SAMPLES_PER_USER`     | `3`                      | Review snippets stored per persona      |
+| `PERSONA_SNIPPET_LEN`          | `220`                    | Max chars per stored review snippet     |
+| `MAX_RAG_REVIEWS`              | `3`                      | Sample reviews in the Task A prompt     |
+| `RAG_SNIPPET_LEN`              | `150`                    | Max chars per RAG snippet in the prompt |
+| `TOP_K_RETRIEVE`               | `15`                     | Candidates from the vector store        |
+| `TOP_K_RETURN`                 | `10`                     | Final recommendations returned          |
+| `LLM_REVIEW_TOKENS`            | `600`                    | Max tokens for Task A generation        |
+| `LLM_RERANK_TOKENS`            | `1500`                   | Max tokens for Task B rerank JSON       |
+| `LLM_MAX_RETRIES`              | `2`                      | Transient-error retry budget            |
 
 ---
 
 ## API reference
 
-### Task A — `POST /simulate-review`
+The consolidated service exposes both tasks under one origin.
+
+### Task A — `POST /api/simulate`
 
 ```json
 {
@@ -230,8 +264,8 @@ All knobs live in `.env`. Sensible defaults are provided; override as needed.
   "product_details": {
     "name": "Mama Put Kitchen",
     "categories": "Nigerian, African, Restaurants",
-    "city": "Lagos",
-    "state": "LA",
+    "city": "Abuja",
+    "state": "FC",
     "stars": 4.2,
     "review_count": 88
   }
@@ -255,7 +289,7 @@ Response:
 }
 ```
 
-### Task B — `POST /recommend`
+### Task B — `POST /api/recommend`
 
 ```json
 {
@@ -297,13 +331,21 @@ Response:
 
 ---
 
+## Deployment
+
+The production system runs on Google Cloud Run (8 GiB, 2 vCPU), with the
+web client served by Firebase Hosting at `bcthack.vancus.app`. Firebase
+rewrites proxy `/api/*` to the Cloud Run service, so the UI and API share
+a single origin. The Gemini API key is held in Google Secret Manager and
+injected at deploy time, never baked into the image.
+
+---
+
 ## License
 
-MIT. Yelp dataset is subject to its own [license terms](https://www.yelp.com/dataset/download).
+MIT. The Yelp dataset is subject to its own [license terms](https://www.yelp.com/dataset/download).
 
 ## Citation
-
-If you use this work, please cite:
 
 ```bibtex
 @misc{personarag2026,
@@ -314,8 +356,6 @@ If you use this work, please cite:
 }
 ```
 
----
-
 ## Acknowledgements
 
-Built for the DSN × BCT LLM Agent Challenge 2026 (Hackathon 3.0). Uses the Yelp Open Dataset, Google Gemini, ChromaDB, sentence-transformers, and FastAPI.
+Built for the DSN × BCT LLM Agent Challenge 2026 (Hackathon 3.0). Uses the Yelp Open Dataset, Google Gemini, ChromaDB, and FastAPI.

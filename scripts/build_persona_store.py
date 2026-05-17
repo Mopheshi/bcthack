@@ -1,6 +1,4 @@
 """
-scripts/build_persona_store.py
--------------------------------
 Build-time precomputation. Run ONCE locally after extract_data.py.
 
 WHY THIS EXISTS

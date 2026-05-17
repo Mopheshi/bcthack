@@ -1,6 +1,4 @@
 """
-shared/vectorstore/store.py
-----------------------------
 ChromaDB wrapper — now indexes BUSINESSES (150K), not reviews (5.7M).
 
 Two query patterns:

@@ -1,6 +1,4 @@
 """
-scripts/smoke_test.py
-----------------------
 Verifies the full pipeline works before containerisation.
 Runs one Task A simulation and one Task B recommendation locally.
 

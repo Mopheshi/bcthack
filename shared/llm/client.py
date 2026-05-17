@@ -1,6 +1,4 @@
 """
-shared/llm/client.py  (v3 — Gemini 3.x thinking control + retries)
--------------------------------------------------------------------
 Unified LLM client. Set LLM_PROVIDER in .env to switch.
 
 WHAT'S NEW IN v3

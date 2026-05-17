@@ -1,6 +1,4 @@
 """
-task_b/main.py  (v3 — async)
------------------------------
 Recommendation Agent API. Now uses the async recommender for parallel
 intent reasoning + retrieval, giving ~30% speed-up on warm-user requests.
 

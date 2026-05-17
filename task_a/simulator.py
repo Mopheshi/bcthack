@@ -1,6 +1,4 @@
 """
-task_a/simulator.py  (v4 — production tuned)
----------------------------------------------
 LATENCY FIXES over v3:
 
 1. RAG context cap: 3 sample reviews × 150 chars max (was 5 × 300 chars).

@@ -1,8 +1,6 @@
 """
 Yelp Open Dataset - EDA Script
 DSN x BCT Hackathon 3.0
---------------------------------
-Run: python yelp_eda.py --data_dir /path/to/yelp/json/files
 """
 
 import json

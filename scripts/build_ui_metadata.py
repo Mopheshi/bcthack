@@ -1,6 +1,4 @@
 """
-scripts/build_ui_metadata.py
------------------------------
 Pre-computes dropdown options for the UI from the processed Yelp data.
 Outputs ./data/processed/ui_metadata.json with:
   - top_users   : 50 most active warm users (user_id + review_count + signature)

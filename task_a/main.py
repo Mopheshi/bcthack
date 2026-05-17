@@ -3,7 +3,7 @@ task_a/main.py  —  Review Simulator API
 POST /simulate-review
 POST /simulate-review/batch
 GET  /health
-GET  /metadata        ← NEW: dropdown data for the UI
+GET  /metadata
 """
 
 import json

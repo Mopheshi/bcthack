@@ -1,6 +1,4 @@
 """
-scripts/extract_data.py
------------------------
 Parses all 5 Yelp JSON files, joins them, and outputs two clean parquet files:
 
   processed/reviews.parquet   — one row per review, enriched with user + biz metadata

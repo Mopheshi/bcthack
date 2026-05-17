@@ -1,4 +1,4 @@
-/* ── Reduced motion respect ──────────────────────────────────────────────── */
+/* Reduced motion respect */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -9,28 +9,28 @@
   .cursor-glow { display: none; }
 }
 
-/* ── Card hover lift ─────────────────────────────────────────────────────── */
+/* Card hover lift */
 .card {
   transition: border-color var(--dur-mid) var(--ease-out),
               transform var(--dur-mid) var(--ease-out),
               box-shadow var(--dur-mid) var(--ease-out);
 }
 
-/* ── Tab transition is in base.css via .tab-indicator ────────────────────── */
+/* Tab transition is in base.css via .tab-indicator */
 
-/* ── Star button press ───────────────────────────────────────────────────── */
+/* Star button press */
 .star-btn:active { transform: scale(0.96); }
 
-/* ── Button press ────────────────────────────────────────────────────────── */
+/* Button press */
 .btn:active:not(:disabled) { transform: scale(0.98); }
 
-/* ── Dropdown option keyboard focus ──────────────────────────────────────── */
+/* Dropdown option keyboard focus */
 .dd-option:focus-visible {
   outline: 2px solid rgba(232, 184, 75, 0.5);
   outline-offset: -2px;
 }
 
-/* ── Subtle entry stagger for form fields on tab switch ──────────────────── */
+/* Subtle entry stagger for form fields on tab switch */
 .panel.active .field {
   animation: field-enter 400ms var(--ease-out) both;
 }

@@ -1,6 +1,4 @@
 """
-scripts/build_persona_index.py
--------------------------------
 Pre-builds the user_id -> row_indices inverted index ONCE and saves it
 to disk as a compact pickle. Containers can then load this in ~3 seconds
 instead of rebuilding it on every restart (which takes 90-120s).

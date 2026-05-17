@@ -1,6 +1,4 @@
 """
-shared/nigerian/adapter.py
---------------------------
 Nigerian Style Adapter — the bonus marks differentiator.
 
 Two responsibilities:

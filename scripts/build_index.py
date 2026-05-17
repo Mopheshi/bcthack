@@ -1,6 +1,4 @@
 """
-scripts/build_index.py  (v2 — business-level indexing)
--------------------------------------------------------
 WHAT CHANGED AND WHY:
   Previous version tried to index 5.7M reviews → ChromaDB compaction crash.
   This version indexes ~150K businesses instead.
