@@ -1,4 +1,4 @@
-/* ── Custom Dropdown (v4 — portaled menu) ─────────────────────────────────── */
+/* Portalled dropdown */
 
 .dd {
   position: relative;
@@ -47,10 +47,9 @@
   transform: translateY(-50%) rotate(180deg);
 }
 
-/* ── Portaled menu (lives in document.body) ──────────────────────────────── */
+/* Portalled menu (lives in document.body) */
 
 .dd-menu-portal {
-  /* Hidden by default; .open class makes it visible */
   position: fixed;
   background: #0B1221;
   border: 1px solid rgba(255, 255, 255, 0.15);

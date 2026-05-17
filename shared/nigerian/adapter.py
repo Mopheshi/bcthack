@@ -17,8 +17,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# ── Nigerian signal vocabulary ────────────────────────────────────────────────
-# These are linguistic markers common in Nigerian English and Naija Pidgin.
+# Linguistic markers common in Nigerian English and Naija Pidgin.
 # Not exhaustive — enough to detect intent and guide tone.
 
 NIGERIAN_LEXICAL_SIGNALS = {

@@ -1,13 +1,9 @@
 """
-LATENCY FIXES over v3:
+Task A — review simulation.
 
-1. RAG context cap: 3 sample reviews × 150 chars max (was 5 × 300 chars).
-   Cuts ~900 input tokens per warm-user call → ~3-5s faster Gemini response.
-
-2. Trimmed system prompt verbosity. Same information, fewer tokens.
-
-3. LLM_MAX_TOKENS lowered to 600 (was 8000). Reviews are 80-200 words,
-   600 tokens is plenty and prevents Gemini from over-generating.
+Latency tuning: RAG context capped at 3 × 150-char snippets (was 5 × 300),
+system prompt trimmed, LLM_MAX_TOKENS lowered to 600 (reviews average 80-200
+words; 600 is plenty and avoids Gemini over-generating).
 """
 
 import logging
@@ -24,21 +20,13 @@ from shared.nigerian.adapter import apply as nigerian_apply, build_system_prompt
 load_dotenv()
 log = logging.getLogger(__name__)
 
-# Tightened for latency
 MAX_RAG_REVIEWS    = int(os.getenv("MAX_RAG_REVIEWS",     "3"))
 RAG_SNIPPET_LEN    = int(os.getenv("RAG_SNIPPET_LEN",     "150"))
 LLM_MAX_TOKENS     = int(os.getenv("LLM_REVIEW_TOKENS",   "600"))
 
 
-# ── Rating Predictor (unchanged from v3) ──────────────────────────────────────
-
 class RatingPredictor:
-    """
-    Calibrated star rating predictor.
-
-    Strategy (no ML model needed — pure statistics):
-      predicted = clip(user_mean + business_deviation_from_global, 1, 5)
-    """
+    """Calibrated star predictor: clip(user_mean + business_deviation_from_global, 1, 5)."""
     GLOBAL_MEAN = 3.63
 
     def predict(self, persona: dict, biz_avg_stars: float, biz_review_count: int = 0) -> float:
@@ -54,20 +42,7 @@ class RatingPredictor:
         return round(clipped * 2) / 2
 
 
-# ── Review Simulator ──────────────────────────────────────────────────────────
-
 class ReviewSimulator:
-    """
-    Main Task A class. Instantiate once at app startup.
-
-    Usage:
-        sim = ReviewSimulator()
-        result = sim.simulate(
-            user_id="abc123",
-            business_id="xyz456",
-            product_details={"name": "Joe's Pizza", "categories": "Pizza, Italian", ...}
-        )
-    """
 
     def __init__(self):
         log.info("Initialising ReviewSimulator ...")
@@ -82,15 +57,6 @@ class ReviewSimulator:
         business_id: str,
         product_details: Optional[dict] = None,
     ) -> dict:
-        """
-        Returns:
-          {
-            predicted_stars : float,
-            review_text     : str,
-            persona_summary : dict,
-            rating_confidence: float,
-          }
-        """
         product_details = product_details or {}
 
         persona = self.persona_builder.build(user_id)
@@ -104,7 +70,6 @@ class ReviewSimulator:
         ]))
         persona = nigerian_apply(persona, user_context=context_text)
 
-        # Predict rating
         biz_avg    = float(product_details.get("stars", RatingPredictor.GLOBAL_MEAN))
         biz_cnt    = int(product_details.get("review_count", 0))
         pred_stars = self.rating_predictor.predict(persona, biz_avg, biz_cnt)
@@ -112,18 +77,14 @@ class ReviewSimulator:
         # RAG context — capped at 3 short snippets
         rag_context = self._build_rag_context(persona, product_details)
 
-        # Build prompts
         system_prompt = self._build_system_prompt(persona, product_details, pred_stars)
         system_prompt = build_system_prompt(system_prompt, persona, task="review")
         user_prompt   = self._build_user_prompt(product_details, pred_stars, rag_context)
 
-        # Generate
         review_text = self._get_llm().complete(
             system=system_prompt, user=user_prompt,
             max_tokens=LLM_MAX_TOKENS,
         )
-
-        # Clean any stray artefacts
         review_text = _clean_review(review_text)
 
         return {
@@ -132,8 +93,6 @@ class ReviewSimulator:
             "persona_summary"   : _persona_summary(persona),
             "rating_confidence" : _rating_confidence(persona),
         }
-
-    # ── Prompt construction (tightened) ──────────────────────
 
     def _build_system_prompt(self, persona: dict, biz: dict, stars: float) -> str:
         style   = persona.get("style_label",  "medium")
@@ -200,8 +159,6 @@ class ReviewSimulator:
         return self._llm
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
 def _clean_review(text: str) -> str:
     """Remove common LLM artefacts from generated review text."""
     # Remove leading labels like "Review:", "User review:", etc.
@@ -223,9 +180,6 @@ def _persona_summary(persona: dict) -> dict:
 
 
 def _rating_confidence(persona: dict) -> float:
-    """
-    Returns a 0–1 confidence score for the rating prediction.
-    Higher review count = more confidence.
-    """
+    """0–1 confidence based on review count."""
     rc = persona.get("review_count", 0)
     return round(min(1.0, rc / 50.0), 2)

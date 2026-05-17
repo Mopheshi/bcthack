@@ -40,7 +40,6 @@ def build():
                  "biz_avg_stars", "biz_review_cnt"]
     )
 
-    # ── Top users (most active warm users) ─────────────────────
     log.info("Building top users list ...")
     top_users = (
         df_users
@@ -58,7 +57,6 @@ def build():
             f"{u['mean_stars']:.1f}★ avg, {bias})"
         )
 
-    # ── Top cities (with their state) ──────────────────────────
     log.info("Building top cities list ...")
     city_state = (
         df_rev.dropna(subset=["city"])
@@ -70,7 +68,6 @@ def build():
     )
     top_cities = city_state.to_dict(orient="records")
 
-    # ── States ─────────────────────────────────────────────────
     log.info("Building states list ...")
     state_counts = (
         df_rev.dropna(subset=["state"])
@@ -79,7 +76,6 @@ def build():
     )
     top_states = state_counts.to_dict(orient="records")
 
-    # ── Top categories ─────────────────────────────────────────
     log.info("Building top categories list ...")
     from collections import Counter
     cat_counter = Counter()
@@ -92,9 +88,8 @@ def build():
         for name, cnt in cat_counter.most_common(40)
     ]
 
-    # ── Sample businesses (diverse) ────────────────────────────
     log.info("Building sample businesses list ...")
-    # Unique businesses, prioritise variety across categories
+    # unique businesses, prioritise variety across categories
     unique_biz = (
         df_rev.drop_duplicates(subset=["business_id"])
         [["business_id", "biz_name", "city", "state", "categories",
@@ -124,7 +119,6 @@ def build():
     ]
     sample_businesses = nigerian_demo + sample_businesses
 
-    # ── Save ──────────────────────────────────────────────────
     out = {
         "top_users"        : top_users,
         "top_cities"       : top_cities,

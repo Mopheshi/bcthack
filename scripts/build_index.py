@@ -1,22 +1,12 @@
 """
-WHAT CHANGED AND WHY:
-  Previous version tried to index 5.7M reviews → ChromaDB compaction crash.
-  This version indexes ~150K businesses instead.
+Indexes ~150K businesses into ChromaDB for semantic search.
 
-WHY THIS IS ACTUALLY BETTER:
-  - Task A (review sim): user history comes from parquet (fast pandas filter).
-                         No need to embed 5.7M reviews for this.
-  - Task B (recommend):  semantic search is over BUSINESSES, not reviews.
-                         "Find places similar to this query" = business-level.
-  - 150K docs indexes in ~5-10 min. 5.7M took hours and crashed.
+Indexing businesses (not the 5.7M review rows) avoids ChromaDB compaction
+crashes and fits the access pattern: Task A reads user history from parquet,
+Task B's semantic search works at business level.
 
-CHECKPOINT / RESUME:
-  Progress saved every 100 batches to build_index_checkpoint.json.
-  If it crashes, re-run with --resume.
-
-Run:
-    python -m scripts.build_index               # auto-resume if checkpoint exists
-    python -m scripts.build_index --fresh       # delete and start over
+Progress is saved every 100 batches to build_index_checkpoint.json; re-run
+with --fresh to start over from scratch.
 """
 
 import os
@@ -45,8 +35,6 @@ BATCH_SIZE      = 200
 CHECKPOINT_FILE = PROCESSED_DIR / "build_index_checkpoint.json"
 SNIPPET_CHARS   = 300
 
-
-# ── Build rich business documents ─────────────────────────────────────────────
 
 def build_business_documents() -> pd.DataFrame:
     import json as _json
@@ -107,8 +95,6 @@ def _build_doc_text(row) -> str:
     return "\n".join(parts)
 
 
-# ── Checkpoint helpers ─────────────────────────────────────────────────────────
-
 def load_checkpoint() -> int:
     if CHECKPOINT_FILE.exists():
         with open(CHECKPOINT_FILE) as f:
@@ -128,8 +114,6 @@ def clear_checkpoint():
     if CHECKPOINT_FILE.exists():
         CHECKPOINT_FILE.unlink()
 
-
-# ── Main index builder ─────────────────────────────────────────────────────────
 
 def build_index(resume: bool = True):
     CHROMA_DIR.mkdir(parents=True, exist_ok=True)

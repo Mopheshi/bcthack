@@ -232,22 +232,24 @@ The raw review corpus is never loaded at runtime.
 
 All knobs live in `.env`. Sensible defaults are provided; override as needed.
 
-| Variable                       | Default                  | Purpose                                 |
-|--------------------------------|--------------------------|-----------------------------------------|
-| `LLM_PROVIDER`                 | `gemini`                 | `gemini`                                |
-| `LLM_MODEL`                    | `gemini-3.1-flash-lite`  | Model name for the chosen provider      |
-| `LLM_THINKING_LEVEL`           | `minimal`                | Reasoning level for Gemini 3.x models   |
-| `GOOGLE_API_KEY`               |                          | Required for Gemini                     |
-| `MIN_REVIEWS_FOR_WARM_USER`    | `5`                      | Threshold for warm vs cold persona      |
-| `PERSONA_SAMPLES_PER_USER`     | `3`                      | Review snippets stored per persona      |
-| `PERSONA_SNIPPET_LEN`          | `220`                    | Max chars per stored review snippet     |
-| `MAX_RAG_REVIEWS`              | `3`                      | Sample reviews in the Task A prompt     |
-| `RAG_SNIPPET_LEN`              | `150`                    | Max chars per RAG snippet in the prompt |
-| `TOP_K_RETRIEVE`               | `15`                     | Candidates from the vector store        |
-| `TOP_K_RETURN`                 | `10`                     | Final recommendations returned          |
-| `LLM_REVIEW_TOKENS`            | `600`                    | Max tokens for Task A generation        |
-| `LLM_RERANK_TOKENS`            | `1500`                   | Max tokens for Task B rerank JSON       |
-| `LLM_MAX_RETRIES`              | `2`                      | Transient-error retry budget            |
+| Variable                    | Default                  | Purpose                                 |
+|-----------------------------|--------------------------|-----------------------------------------|
+| `LLM_PROVIDER`              | `gemini`                 | `gemini`, or `openai` or `anthropic`    |
+| `LLM_MODEL`                 | `gemini-3.1-flash-lite`  | Model name for the chosen provider      |
+| `LLM_THINKING_LEVEL`        | `minimal`                | Reasoning level for Gemini 3.x models   |
+| `GOOGLE_API_KEY`            |                          | Required for Gemini                     |
+| `OPENAI_API_KEY`            |                          | Required for OpenAI                     |
+| `ANTHROPIC_API_KEY`         |                          | Required for Anthropic                  |
+| `MIN_REVIEWS_FOR_WARM_USER` | `5`                      | Threshold for warm vs cold persona      |
+| `PERSONA_SAMPLES_PER_USER`  | `3`                      | Review snippets stored per persona      |
+| `PERSONA_SNIPPET_LEN`       | `220`                    | Max chars per stored review snippet     |
+| `MAX_RAG_REVIEWS`           | `3`                      | Sample reviews in the Task A prompt     |
+| `RAG_SNIPPET_LEN`           | `150`                    | Max chars per RAG snippet in the prompt |
+| `TOP_K_RETRIEVE`            | `15`                     | Candidates from the vector store        |
+| `TOP_K_RETURN`              | `10`                     | Final recommendations returned          |
+| `LLM_REVIEW_TOKENS`         | `600`                    | Max tokens for Task A generation        |
+| `LLM_RERANK_TOKENS`         | `1500`                   | Max tokens for Task B rerank JSON       |
+| `LLM_MAX_RETRIES`           | `2`                      | Transient-error retry budget            |
 
 ---
 

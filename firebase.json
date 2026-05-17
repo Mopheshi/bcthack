@@ -10,6 +10,18 @@
         "run": { "serviceId": "bcthack-api", "region": "us-central1" }
       },
       {
+        "source": "/docs",
+        "run": { "serviceId": "bcthack-api", "region": "us-central1" }
+      },
+      {
+        "source": "/redoc",
+        "run": { "serviceId": "bcthack-api", "region": "us-central1" }
+      },
+      {
+        "source": "/openapi.json",
+        "run": { "serviceId": "bcthack-api", "region": "us-central1" }
+      },
+      {
         "source": "/health",
         "run": { "serviceId": "bcthack-api", "region": "us-central1" }
       },

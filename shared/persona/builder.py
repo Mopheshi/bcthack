@@ -122,8 +122,6 @@ class PersonaBuilder:
         return len(self._store)
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 def _safe_json_list(val) -> list:
     if isinstance(val, list):
         return val

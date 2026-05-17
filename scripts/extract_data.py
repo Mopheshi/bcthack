@@ -37,8 +37,6 @@ FILES = {
 }
 
 
-# ── Streaming helpers ────────────────────────────────────────────────────────
-
 def stream_ndjson(path: Path, limit: int = None):
     count = 0
     with open(path, encoding="utf-8") as f:
@@ -51,8 +49,6 @@ def stream_ndjson(path: Path, limit: int = None):
             if limit and count >= limit:
                 break
 
-
-# ── Step 1: Load businesses ──────────────────────────────────────────────────
 
 def load_businesses() -> dict:
     """Returns dict: business_id → {name, categories, city, state, stars, review_count}"""
@@ -73,8 +69,6 @@ def load_businesses() -> dict:
     return biz
 
 
-# ── Step 2: Load users ───────────────────────────────────────────────────────
-
 def load_users() -> dict:
     """Returns dict: user_id → computed behavioural features"""
     path = RAW_DIR / FILES["user"]
@@ -94,8 +88,6 @@ def load_users() -> dict:
     log.info(f"  → {len(users):,} users loaded")
     return users
 
-
-# ── Step 3: Stream + enrich reviews ─────────────────────────────────────────
 
 def extract_reviews(businesses: dict, users: dict, min_user_reviews: int = 5) -> pd.DataFrame:
     """
@@ -148,8 +140,6 @@ def extract_reviews(businesses: dict, users: dict, min_user_reviews: int = 5) ->
     return pd.DataFrame(rows)
 
 
-# ── Step 4: Add derived features ─────────────────────────────────────────────
-
 def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Adds columns used by the persona engine:
@@ -175,8 +165,6 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-
-# ── Step 5: Build per-user summary ───────────────────────────────────────────
 
 def build_user_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -215,8 +203,6 @@ def _top_categories(series: pd.Series, top_n: int = 5) -> str:
     return ", ".join(c for c, _ in cats.most_common(top_n))
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-reviews", type=int, default=5,
@@ -243,7 +229,6 @@ def main():
     log.info("Step 5 — User summary table")
     df_users = build_user_summary(df_reviews)
 
-    # ── Save ────────────────────────────────────────────────
     reviews_out = PROCESSED_DIR / "reviews.parquet"
     users_out   = PROCESSED_DIR / "users.parquet"
 

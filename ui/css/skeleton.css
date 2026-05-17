@@ -1,5 +1,3 @@
-/* ── Skeleton shimmer loading states ─────────────────────────────────────── */
-
 .skeleton {
   position: relative;
   background: linear-gradient(
@@ -19,7 +17,6 @@
   100% { background-position: -200% 0; }
 }
 
-/* ── Skeleton building blocks ────────────────────────────────────────────── */
 .sk-line {
   height: 12px;
   margin-bottom: 8px;
@@ -43,7 +40,7 @@
 .sk-h-44 { height: 44px; }
 .sk-h-80 { height: 80px; }
 
-/* ── Task A skeleton layout ──────────────────────────────────────────────── */
+/* Task A */
 .skeleton-task-a {
   animation: fade-up 200ms var(--ease-out) both;
 }
@@ -107,7 +104,7 @@
   border-radius: 20px;
 }
 
-/* ── Task B skeleton layout ──────────────────────────────────────────────── */
+/* Task B */
 .skeleton-task-b {
   animation: fade-up 200ms var(--ease-out) both;
 }
@@ -157,7 +154,7 @@
 .sk-rec-score-val { width: 36px; height: 12px; margin-left: auto; margin-bottom: 4px; }
 .sk-rec-score-pct { width: 28px; height: 9px; margin-left: auto; }
 
-/* ── Loading message strip ───────────────────────────────────────────────── */
+/* Loading strip */
 .loading-strip {
   display: flex;
   align-items: center;
@@ -182,7 +179,6 @@
 
 .loading-strip-text {
   flex: 1;
-  /* Subtle text shimmer */
   background: linear-gradient(
     90deg,
     var(--teal) 0%,

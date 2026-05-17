@@ -1,23 +1,13 @@
 """
-Build-time precomputation. Run ONCE locally after extract_data.py.
+Precomputes persona data at build time. Run once locally after extract_data.py.
 
-WHY THIS EXISTS
-  The old architecture loaded all 5.78M review rows into RAM at container
-  startup, then built a persona live on every request. That caused 90s+
-  boots, restart loops, and made two containers impossible on 16GB RAM.
+Loading all 5.78M review rows at runtime meant 90-second boots, health-check
+failures, and two containers being impossible on 16 GB. This script moves that
+work offline, writing persona_store.parquet — one fully-formed persona per warm
+user (those with >= MIN_REVIEWS_FOR_WARM_USER reviews). The service then loads
+only this file (~150-250 MB) in 2-3 seconds.
 
-  This script moves ALL of that work to build time. It produces a single
-  compact parquet — persona_store.parquet — containing one fully-formed
-  persona per WARM user (>= MIN_REVIEWS_FOR_WARM_USER reviews), with the
-  sample review text already embedded.
-
-  At runtime the service loads only this file (~150-250 MB) in 2-3s and
-  NEVER touches reviews.parquet again.
-
-OUTPUT
-  data/processed/persona_store.parquet
-
-  Columns:
+Output — data/processed/persona_store.parquet:
     user_id           str
     review_count      int
     mean_stars        float
@@ -29,9 +19,6 @@ OUTPUT
     style_label       str   (concise|medium|verbose)
     top_categories    str   (JSON list)
     sample_reviews    str   (JSON list of short review snippets)
-
-RUN
-    python -m scripts.build_persona_store
 """
 
 import os
@@ -55,10 +42,8 @@ REVIEWS_PARQ  = PROCESSED_DIR / "reviews.parquet"
 STORE_PARQ    = PROCESSED_DIR / "persona_store.parquet"
 
 MIN_WARM        = int(os.getenv("MIN_REVIEWS_FOR_WARM_USER", "5"))
-# Number of sample reviews to embed per persona. 3 is enough for style
-# transfer in Task A; more inflates the store and the prompt.
+# 3 samples is enough for style transfer in Task A; more inflates the store and the prompt.
 SAMPLES_PER_USER = int(os.getenv("PERSONA_SAMPLES_PER_USER", "3"))
-# Max characters per stored review snippet.
 SNIPPET_LEN      = int(os.getenv("PERSONA_SNIPPET_LEN", "220"))
 
 
@@ -73,7 +58,6 @@ def build():
         log.error("users.parquet or reviews.parquet missing. Run extract_data.py first.")
         return
 
-    # ── 1. Load the user aggregate table (small) ─────────────────────────────
     t0 = time.time()
     log.info("Loading users.parquet ...")
     users = pd.read_parquet(USERS_PARQ)
@@ -83,7 +67,6 @@ def build():
     warm_ids = set(warm["user_id"].astype(str))
     log.info(f"  {len(warm):,} warm users (>= {MIN_WARM} reviews)")
 
-    # ── 2. Load reviews, keep only warm-user rows ────────────────────────────
     t0 = time.time()
     log.info("Loading reviews.parquet (text, stars, categories, date) ...")
     reviews = pd.read_parquet(
@@ -96,7 +79,6 @@ def build():
     reviews = reviews[reviews["user_id"].isin(warm_ids)]
     log.info(f"  {len(reviews):,} rows belong to warm users")
 
-    # ── 3. Build the inverted index (user_id -> row positions) ───────────────
     t0 = time.time()
     log.info("Building inverted index (numpy argsort) ...")
     uids = reviews["user_id"].values
@@ -118,7 +100,6 @@ def build():
     cat_arr  = reviews["categories"].values
     date_arr = reviews["date"].values
 
-    # ── 4. Compose one persona row per warm user ─────────────────────────────
     t0 = time.time()
     log.info("Composing personas ...")
     records = []
@@ -132,7 +113,6 @@ def build():
             continue
         urow = warm_indexed.loc[uid]
 
-        # Sort this user's reviews by date desc, take most recent N
         sub_dates = date_arr[positions]
         order = np.argsort(sub_dates)[::-1]          # newest first
         recent = positions[order][:SAMPLES_PER_USER]
@@ -142,7 +122,7 @@ def build():
             for p in recent
         ]
 
-        # Top categories across this user's recent reviews (up to 20 for signal)
+        # up to 20 rows for category signal
         cat_window = positions[order][:20]
         cats = []
         for p in cat_window:
@@ -169,7 +149,6 @@ def build():
 
     log.info(f"  Composed {len(records):,} personas ({time.time()-t0:.1f}s)")
 
-    # ── 5. Save ──────────────────────────────────────────────────────────────
     store = pd.DataFrame.from_records(records)
     store.to_parquet(STORE_PARQ, index=False, compression="zstd")
     size_mb = STORE_PARQ.stat().st_size / (1024 * 1024)

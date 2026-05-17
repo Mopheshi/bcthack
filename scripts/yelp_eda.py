@@ -9,8 +9,6 @@ import argparse
 import statistics
 from collections import Counter, defaultdict
 
-# ─── Streaming helper ────────────────────────────────────────────────────────
-
 def stream_ndjson(filepath, limit=None):
     """Stream a newline-delimited JSON file one record at a time."""
     count = 0
@@ -23,8 +21,6 @@ def stream_ndjson(filepath, limit=None):
             count += 1
             if limit and count >= limit:
                 break
-
-# ─── Per-file EDA functions ───────────────────────────────────────────────────
 
 def eda_businesses(filepath):
     print("\n" + "="*60)
@@ -197,7 +193,6 @@ def eda_checkins(filepath):
     print(f"Unique businesses      : {len(biz_set):,}")
 
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description='Yelp Dataset EDA')

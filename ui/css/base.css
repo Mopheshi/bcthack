@@ -49,7 +49,7 @@
   --display: 'Inter', 'DM Sans', system-ui, sans-serif;
 }
 
-/* Reset ──*/
+/* Reset */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -150,7 +150,7 @@ body {
   opacity: 0;
 }
 
-/* App container ───────────────────────────────────────────────────────── */
+/* App container */
 #app {
   position: relative;
   z-index: 2;
@@ -159,7 +159,7 @@ body {
   padding: 28px 24px 80px;
 }
 
-/* Header ─*/
+/* Header */
 .header {
   display: flex;
   align-items: center;
@@ -286,7 +286,7 @@ body {
 
 .status-dot.offline { background: var(--red); }
 
-/* Tabs ───*/
+/* Tabs */
 .tabs {
   position: relative;
   display: flex;
@@ -340,7 +340,7 @@ body {
   transition: left var(--dur-mid) var(--ease-out), width var(--dur-mid) var(--ease-out);
 }
 
-/* Panels ─*/
+/* Panels */
 .panel { display: none; }
 .panel.active {
   display: block;
@@ -366,7 +366,7 @@ body {
   #app { padding: 20px 16px 60px; }
 }
 
-/* Cards ──*/
+/* Cards */
 .card {
   background: var(--bg-card);
   background-image: var(--grad-card);

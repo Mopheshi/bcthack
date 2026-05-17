@@ -1,14 +1,12 @@
 """
-CHANGE FROM v4
-  RecommendationAgent now accepts an optional persona_builder argument.
-  When the consolidated app passes the same PersonaBuilder used by Task A,
-  the persona store is held in memory exactly once for the whole service.
-  If none is passed (standalone use), it builds its own — backward compatible.
+Task B — recommendation agent.
 
-  Persona lookups are now O(1) dict reads against the precomputed store,
-  so the previous "parallelise persona build" concerns are moot — the
-  only real latency is the two LLM calls (intent + rerank), which still
-  run with retrieval overlapped.
+Accepts an optional persona_builder so the consolidated app can share the
+same PersonaBuilder instance as Task A, keeping the persona store in memory
+once. Omitting it builds its own (backward-compatible for standalone use).
+
+Persona lookups are O(1) dict reads against the precomputed store; the only
+real latency is the two LLM calls (intent + rerank), which overlap with retrieval.
 """
 
 import asyncio
@@ -111,19 +109,11 @@ class RecommendationAgent:
             candidates: list,
             top_k: int = TOP_K_RETURN,
     ) -> dict:
-        """
-        Rerank a fixed candidate pool for a user.
-
-        candidates: list of business dicts, each with at least
-                    {business_id, name, categories, city, stars}.
-        Returns the same shape as recommend().
-        """
+        """Rerank a fixed candidate pool; returns the same shape as recommend()."""
         top_k = min(top_k, len(candidates)) if candidates else 0
         persona = self.persona_builder.build(user_id)
         persona = nigerian_apply(persona, user_context=context)
 
-        # Resolve a search intent so the reranker has the same signal it
-        # would have in the live pipeline.
         search_intent = self._reason_intent_sync(persona, context, [])
 
         ranked = self._rerank_sync(persona, candidates, search_intent, top_k)
@@ -134,8 +124,6 @@ class RecommendationAgent:
             "persona_summary": _persona_summary(persona),
             "search_intent": search_intent,
         }
-
-    # ── Sync internals (run via asyncio.to_thread) ───────────────────────────
 
     def _reason_intent_sync(self, persona, context, history) -> str:
         top_cats = persona.get("top_categories", [])[:3]
@@ -278,7 +266,7 @@ def _distance_fallback(candidates: list, top_k: int) -> list:
             "city": c.get("city", ""),
             "stars": str(c.get("stars", "")),
             "score": round(1 - float(c.get("distance", 0.5)), 3),
-            "reason": "Matched based on semantic similarity to your preferences.",
+            "reason": "Matched on semantic similarity.",
         }
         for c in candidates[:top_k]
     ]

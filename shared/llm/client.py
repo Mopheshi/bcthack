@@ -1,24 +1,14 @@
 """
-Unified LLM client. Set LLM_PROVIDER in .env to switch.
+Unified LLM client. Just set LLM_PROVIDER in your .env to switch between them.
 
-WHAT'S NEW IN v3
-  - thinking_level support for Gemini 3.x models. Gemini 3 replaced the
-    old thinking_budget integer with a thinking_level string
-    (minimal|low|medium|high). For low-latency structured tasks we want
-    'minimal'. This is set via .env: LLM_THINKING_LEVEL=minimal
-  - Backward compatible: if the model is a 2.5 model, thinking_budget=0
-    is used instead (the old mechanism).
-  - Bounded retry with backoff on transient API errors (503/timeout).
-  - max_output_tokens is actually passed through now.
-
-Supported:
+Supported options:
   LLM_PROVIDER=gemini      -> google-genai
   LLM_PROVIDER=anthropic   -> Anthropic Claude
   LLM_PROVIDER=openai      -> OpenAI
 
-Methods on every client:
+Available methods across all clients:
   complete(system, user, max_tokens)        -> str
-  complete_json(system, user, max_tokens)   -> str  (JSON-enforced)
+  complete_json(system, user, max_tokens)   -> str  (forces JSON output)
 """
 
 import os
@@ -36,8 +26,6 @@ MAX_TOKENS     = int(os.getenv("LLM_MAX_TOKENS", "1000"))
 THINKING_LEVEL = os.getenv("LLM_THINKING_LEVEL", "minimal").lower()
 MAX_RETRIES    = int(os.getenv("LLM_MAX_RETRIES", "2"))
 
-
-# ── Gemini (google-genai SDK) ────────────────────────────────────────────────
 
 class GeminiClient:
     def __init__(self):
@@ -141,8 +129,6 @@ class GeminiClient:
         return _extract_json((response.text or "{}").strip())
 
 
-# ── Anthropic ────────────────────────────────────────────────────────────────
-
 class AnthropicClient:
     def __init__(self):
         try:
@@ -167,8 +153,6 @@ class AnthropicClient:
         json_system = system + "\n\nRespond with valid JSON only. No markdown, no preamble."
         return _extract_json(self.complete(json_system, user, max_tokens))
 
-
-# ── OpenAI ───────────────────────────────────────────────────────────────────
 
 class OpenAIClient:
     def __init__(self):
@@ -200,8 +184,6 @@ class OpenAIClient:
         )
         return _extract_json(r.choices[0].message.content.strip())
 
-
-# ── Factory + singleton ──────────────────────────────────────────────────────
 
 _PROVIDERS = {"gemini": GeminiClient, "anthropic": AnthropicClient, "openai": OpenAIClient}
 _client = None

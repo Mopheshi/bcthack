@@ -1,4 +1,4 @@
-/* ── Stars selector ──────────────────────────────────────────────────────── */
+/* Stars selector */
 .stars-row {
   display: flex;
   gap: 6px;
@@ -26,7 +26,7 @@
   color: var(--gold);
 }
 
-/* ── Primary button ──────────────────────────────────────────────────────── */
+/* Primary button */
 .btn {
   width: 100%;
   padding: 13px;
@@ -62,7 +62,6 @@
   filter: none;
 }
 
-/* Shimmer sweep on hover */
 .btn-shine {
   position: absolute;
   top: 0; left: -100%;
@@ -97,7 +96,7 @@
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Result area ─────────────────────────────────────────────────────────── */
+/* Result area */
 .result-area {
   margin-top: 0;
   min-height: 200px;
@@ -145,7 +144,7 @@
   line-height: 1.7;
 }
 
-/* ── Stars display (Task A result) ───────────────────────────────────────── */
+/* Stars display */
 .stars-display {
   display: flex;
   align-items: center;
@@ -191,7 +190,7 @@
   transition: width 800ms var(--ease-out);
 }
 
-/* ── Review text box ─────────────────────────────────────────────────────── */
+/* Review text */
 .review-text {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -205,7 +204,6 @@
   position: relative;
 }
 
-/* Vertical accent stripe on the review */
 .review-text::before {
   content: '';
   position: absolute;
@@ -221,7 +219,7 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Tags ────────────────────────────────────────────────────────────────── */
+/* Tags */
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -250,7 +248,7 @@
   font-family: var(--mono);
 }
 
-/* ── Recommendation list ─────────────────────────────────────────────────── */
+/* Recommendations */
 .intent-chip {
   display: inline-flex;
   align-items: center;
@@ -351,7 +349,7 @@
   display: block;
 }
 
-/* ── Error box ───────────────────────────────────────────────────────────── */
+/* Error box */
 .error-box {
   background: rgba(224, 82, 82, 0.08);
   border: 1px solid rgba(224, 82, 82, 0.25);
@@ -364,7 +362,7 @@
   animation: fade-up 300ms var(--ease-out) both;
 }
 
-/* ── Conversation history ────────────────────────────────────────────────── */
+/* Conversation history */
 .convo-box {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
