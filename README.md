@@ -131,17 +131,24 @@ cd bcthack
 cp .env.example .env
 # Edit .env: set LLM_PROVIDER and GOOGLE_API_KEY (or another provider key)
 
-# 2. Download the Yelp Open Dataset into data/raw/
+# 2. Install dependencies
+#    Runtime only (what the deployed service needs — lean, no PyTorch):
+pip install -r requirements.txt
+#    Build/eval extras (adds sentence-transformers + bert-score, for the
+#    offline pipeline and the evaluation harness only):
+pip install -r requirements-dev.txt
+
+# 3. Download the Yelp Open Dataset into data/raw/
 #    https://www.yelp.com/dataset
 
-# 3. Build the data pipeline (build-time, runs once)
+# 4. Build the data pipeline (build-time, runs once)
 python -m scripts.extract_data           # ~3 min   — raw JSON → parquet
 python -m scripts.build_index            # ~2 hours — 150K business embeddings
 python -m scripts.build_persona_store    # ~2-4 min — precompute the persona store
 python -m scripts.build_ui_metadata      # ~30s     — UI dropdown data
 ```
 
-Step 3 is the build-time stage. After it completes, the running service
+Step 4 is the build-time stage. After it completes, the running service
 needs only `data/processed/persona_store.parquet`, `data/processed/chroma/`,
 and `data/processed/ui_metadata.json`.
 
@@ -206,6 +213,18 @@ The deployed container holds only the derived artefacts:
 
 The raw review corpus is never loaded at runtime.
 
+The runtime image is deliberately lean: it installs only `requirements.txt`,
+which carries **no PyTorch**. The dense retriever runs the ONNX build of
+MiniLM-L6-v2 bundled with ChromaDB, so `sentence-transformers` and
+`bert-score` (both of which pull in torch) are confined to
+`requirements-dev.txt` and used only by the offline build and evaluation
+scripts. This keeps the deployed image small — faster cold starts and less
+Artifact Registry storage.
+
+Repeated identical requests are served from a small in-process LRU
+(`RESPONSE_CACHE_SIZE`, default 256), so a duplicate call costs zero LLM
+round-trips.
+
 ---
 
 ## Key design decisions
@@ -250,6 +269,7 @@ All knobs live in `.env`. Sensible defaults are provided; override as needed.
 | `LLM_REVIEW_TOKENS`         | `600`                    | Max tokens for Task A generation        |
 | `LLM_RERANK_TOKENS`         | `1500`                   | Max tokens for Task B rerank JSON       |
 | `LLM_MAX_RETRIES`           | `2`                      | Transient-error retry budget            |
+| `RESPONSE_CACHE_SIZE`       | `256`                    | Bounded LRU of API responses; `0` disables. Collapses identical requests to zero LLM calls |
 
 ---
 
@@ -335,11 +355,40 @@ Response:
 
 ## Deployment
 
-The production system runs on Google Cloud Run (8 GiB, 2 vCPU), with the
-web client served by Firebase Hosting at `bcthack.vancus.app`. Firebase
-rewrites proxy `/api/*` to the Cloud Run service, so the UI and API share
-a single origin. The Gemini API key is held in Google Secret Manager and
-injected at deploy time, never baked into the image.
+The production system runs on Google Cloud Run, with the web client served
+by Firebase Hosting at `bcthack.vancus.app`. Firebase rewrites proxy
+`/api/*` to the Cloud Run service, so the UI and API share a single origin.
+The Gemini API key is held in Google Secret Manager and injected at deploy
+time, never baked into the image.
+
+Deploy with the codified, cost-optimal target:
+
+```bash
+make deploy                    # SERVICE/REGION/SECRET overridable, e.g. make deploy REGION=europe-west1
+make cost-check                # show the live cost-relevant settings
+```
+
+The service is tuned to **bill only while a request is being handled**:
+
+| Setting            | Value  | Why                                                        |
+|--------------------|--------|------------------------------------------------------------|
+| `--min-instances`  | `0`    | No always-on instance → **zero cost when idle**            |
+| `--cpu-throttling`  | on     | CPU allocated only during request processing               |
+| `--max-instances`  | `3`    | Caps cost blast radius of a traffic/retry spike            |
+| `--memory / --cpu` | `8Gi / 2` | Measured floor — startup OOMs at both 2Gi and 4Gi (the in-memory persona store dominates) |
+| `--concurrency`    | `80`   | I/O-bound (LLM-dominated) work → many requests per instance |
+
+The decisive saving is **`min-instances 0`**: for low-traffic use the old
+always-on instance *was* essentially the entire bill, and it is now gone —
+you pay only while a request is being served. Per-instance size is a minor
+factor by comparison, so memory stays at the proven `8Gi`; dropping it to
+`4Gi` first requires shrinking the persona store's in-memory footprint.
+
+Because the app initialises heavy state in a background thread and exposes a
+`/healthz/startup` probe, scale-to-zero cold starts stay in the ~5–10 s range.
+Two `make` targets are provided: `make tune` applies just these settings to the
+running revision (no rebuild, no data needed), while `make deploy` rebuilds the
+image from source *and* applies them.
 
 ---
 

@@ -21,6 +21,7 @@ venv/
 .vscode/
 .idea/
 *.DS_Store
+.claude/
 
 # Deployment
 deploy-cloudrun.ps1

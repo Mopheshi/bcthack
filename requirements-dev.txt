@@ -1,0 +1,16 @@
+# PersonaRAG — build/eval-time requirements.
+# These are needed ONLY for the offline data pipeline and the evaluation
+# harness, never by the running Cloud Run service. Keeping them out of
+# requirements.txt keeps the runtime image lean (no PyTorch), which shrinks
+# cold starts and Artifact Registry storage.
+#
+#   Install for local build/eval work:  pip install -r requirements-dev.txt
+#
+-r requirements.txt
+
+# scripts/build_index.py — builds the 150K-business ChromaDB index with the
+# PyTorch-backed all-MiniLM-L6-v2 encoder (pulls in torch).
+sentence-transformers==5.5.0
+
+# scripts/evaluate.py — BERTScore text-similarity metric for Task A (pulls in torch).
+bert-score==0.3.13

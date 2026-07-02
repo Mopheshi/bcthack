@@ -7,10 +7,12 @@ PersonaBuilder and the vector store anyway, a single service is the right
 call: one copy of data in memory, one cold start, one URL.
 """
 
+import hashlib
 import json
 import logging
 import os
 import threading
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -27,6 +29,49 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"),
 log = logging.getLogger(__name__)
 
 PROCESSED_DIR = Path(os.getenv("PROCESSED_DIR", "./data/processed"))
+
+# Every request costs one (Task A) or two (Task B) LLM round-trips — the
+# dominant avoidable API cost. Demo traffic repeatedly hits the same sample
+# users, so a small bounded cache collapses identical requests to zero LLM
+# calls. Set RESPONSE_CACHE_SIZE=0 to disable.
+RESPONSE_CACHE_SIZE = int(os.getenv("RESPONSE_CACHE_SIZE", "256"))
+
+
+class _LRUCache:
+    """Tiny thread-safe LRU. Shared safely across the sync threadpool
+    (Task A) and the async event loop (Task B)."""
+
+    def __init__(self, maxsize: int):
+        self._max = max(0, maxsize)
+        self._data: "OrderedDict[str, dict]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Optional[dict]:
+        if self._max == 0:
+            return None
+        with self._lock:
+            value = self._data.get(key)
+            if value is not None:
+                self._data.move_to_end(key)
+            return value
+
+    def put(self, key: str, value: dict) -> None:
+        if self._max == 0:
+            return
+        with self._lock:
+            self._data[key] = value
+            self._data.move_to_end(key)
+            while len(self._data) > self._max:
+                self._data.popitem(last=False)
+
+
+_response_cache = _LRUCache(RESPONSE_CACHE_SIZE)
+
+
+def _cache_key(*parts) -> str:
+    """Deterministic key over arbitrary JSON-serialisable request parts."""
+    raw = json.dumps(parts, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 # Singletons populated by the background init thread after uvicorn starts.
 _simulator: Optional[ReviewSimulator]    = None
@@ -158,17 +203,28 @@ def metadata():
     return _metadata
 
 
+def _simulate_cached(req: SimulateRequest) -> dict:
+    """Run (or replay) a single simulation. Identical requests skip the LLM call."""
+    product = req.product_details.model_dump()
+    key = _cache_key("simulate", req.user_id, req.business_id, product)
+    cached = _response_cache.get(key)
+    if cached is not None:
+        return cached
+    result = _simulator.simulate(
+        user_id         = req.user_id,
+        business_id     = req.business_id,
+        product_details = product,
+    )
+    _response_cache.put(key, result)
+    return result
+
+
 @app.post("/api/simulate", response_model=SimulateResponse, tags=["Task A"])
 def simulate(req: SimulateRequest):
     if _simulator is None:
         raise HTTPException(503, "Simulator not initialised yet")
     try:
-        result = _simulator.simulate(
-            user_id         = req.user_id,
-            business_id     = req.business_id,
-            product_details = req.product_details.model_dump(),
-        )
-        return SimulateResponse(**result)
+        return SimulateResponse(**_simulate_cached(req))
     except Exception as e:
         log.error(f"Simulation error: {e}", exc_info=True)
         raise HTTPException(500, str(e))
@@ -181,11 +237,7 @@ def simulate_batch(requests: list[SimulateRequest]):
     results = []
     for req in requests:
         try:
-            r = _simulator.simulate(
-                user_id=req.user_id, business_id=req.business_id,
-                product_details=req.product_details.model_dump(),
-            )
-            results.append({"status": "ok", **r})
+            results.append({"status": "ok", **_simulate_cached(req)})
         except Exception as e:
             results.append({"status": "error", "detail": str(e)})
     return results
@@ -196,12 +248,18 @@ async def recommend(req: RecommendRequest):
     if _agent is None:
         raise HTTPException(503, "Agent not initialised yet")
     try:
+        history = [t.model_dump() for t in req.conversation_history]
+        key = _cache_key("recommend", req.user_id, req.context, history, req.top_k)
+        cached = _response_cache.get(key)
+        if cached is not None:
+            return RecommendResponse(**cached)
         result = await _agent.recommend(
             user_id              = req.user_id,
             context              = req.context,
-            conversation_history = [t.model_dump() for t in req.conversation_history],
+            conversation_history = history,
             top_k                = req.top_k,
         )
+        _response_cache.put(key, result)
         return RecommendResponse(**result)
     except Exception as e:
         log.error(f"Recommendation error: {e}", exc_info=True)
