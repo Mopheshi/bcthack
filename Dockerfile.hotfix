@@ -1,0 +1,14 @@
+# Hotfix overlay image.
+#
+# Reuses the last-good published image — which already contains the baked
+# persona_store.parquet, ui_metadata.json, the full Chroma index and the
+# pre-downloaded ONNX model — and layers ONLY the corrected application code on
+# top. This ships the cold-start crash-loop fix WITHOUT needing the multi-GB
+# data-pipeline output on the build machine (this checkout only has the stub
+# chroma.sqlite3). WORKDIR, ENV and CMD are inherited from the base image.
+FROM us-central1-docker.pkg.dev/vancus-56dc5/cloud-run-source-deploy/bcthack-api@sha256:156c23bc2c216e69a209580f70619a87c7eb135dcaf55534964363eaff4d1777
+
+COPY app/    /app/app/
+COPY shared/ /app/shared/
+COPY task_a/ /app/task_a/
+COPY task_b/ /app/task_b/

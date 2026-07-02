@@ -1,0 +1,14 @@
+# Builds the cold-start hotfix overlay (Dockerfile.hotfix) entirely in Cloud
+# Build — no local Docker required. Run with:
+#   gcloud builds submit --config cloudbuild.hotfix.yaml --project vancus-56dc5
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.hotfix
+      - -t
+      - us-central1-docker.pkg.dev/vancus-56dc5/cloud-run-source-deploy/bcthack-api:hotfix-coldstart
+      - .
+images:
+  - us-central1-docker.pkg.dev/vancus-56dc5/cloud-run-source-deploy/bcthack-api:hotfix-coldstart

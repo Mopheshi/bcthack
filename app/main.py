@@ -7,6 +7,7 @@ PersonaBuilder and the vector store anyway, a single service is the right
 call: one copy of data in memory, one cold start, one URL.
 """
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -90,11 +91,19 @@ def _load_metadata() -> dict:
         return json.load(f)
 
 
-def _background_init():
-    """Heavy init runs in a background thread so uvicorn binds port 8080 immediately."""
+def _initialise():
+    """Load the persona store, vector store and metadata into the module singletons.
+
+    Runs to completion during Cloud Run's startup phase (see lifespan), where CPU
+    is guaranteed even under --cpu-throttling. The previous version ran this in a
+    fire-and-forget daemon thread; once uvicorn had bound the port, Cloud Run
+    throttled CPU and starved ChromaDB's connection pool, crash-looping the
+    instance. Exceptions are captured (not raised) so /healthz/startup can report
+    the failure cleanly rather than the container exiting opaquely.
+    """
     global _simulator, _agent, _metadata, _init_error
     try:
-        log.info("=== PersonaRAG init starting (background) ===")
+        log.info("=== PersonaRAG init starting ===")
         sim   = ReviewSimulator()
         agent = RecommendationAgent(persona_builder=sim.persona_builder)
         meta  = _load_metadata()
@@ -110,7 +119,13 @@ def _background_init():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    threading.Thread(target=_background_init, daemon=True).start()
+    # Initialise synchronously before serving. Cloud Run keeps the instance in its
+    # startup phase (CPU allocated + startup-cpu-boost) until /healthz/startup
+    # passes, so the heavy load runs with full CPU and ChromaDB connects reliably.
+    # Offloaded to a worker thread so the event loop isn't blocked, but we await it
+    # to completion — the server does not accept traffic until init has finished
+    # (or definitively failed). This still scales to zero, so idle cost is unchanged.
+    await asyncio.to_thread(_initialise)
     yield
     log.info("=== PersonaRAG shutting down ===")
 
